@@ -7,7 +7,13 @@ import { useStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
 import { logout, saveState } from "@/lib/actions";
 import type { AppState } from "@/lib/types";
-import { DEFAULT_SETTINGS } from "@/lib/defaults";
+import {
+  DEFAULT_SCHEDULE,
+  DEFAULT_SETTINGS,
+  DEFAULT_TEMPLATES,
+  TEMPLATES_VERSION,
+  needsTemplateMigration,
+} from "@/lib/defaults";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,8 +50,25 @@ export function DataIO() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as Partial<AppState>;
+      const importedSettings = parsed.settings ?? {};
+      // Drop stale templates/schedule from old JSON exports — workout, food
+      // and weight logs are kept exactly as exported.
+      const settings = { ...DEFAULT_SETTINGS, ...importedSettings };
+      if (
+        needsTemplateMigration(
+          settings.templates,
+          settings.schedule,
+          settings.templatesVersion
+        )
+      ) {
+        settings.templates = DEFAULT_TEMPLATES;
+        settings.schedule = DEFAULT_SCHEDULE;
+        settings.cycle = undefined;
+        settings.cycleAnchor = undefined;
+        settings.templatesVersion = TEMPLATES_VERSION;
+      }
       const merged: AppState = {
-        settings: { ...DEFAULT_SETTINGS, ...(parsed.settings ?? {}) },
+        settings,
         workoutLogs: parsed.workoutLogs ?? {},
         foodLogs: parsed.foodLogs ?? {},
         weightLogs: parsed.weightLogs ?? {},

@@ -1,22 +1,27 @@
-import type { Category, Settings, WorkoutTemplate } from "./types";
+// One-off: re-apply the canonical templates / schedule / templatesVersion
+// to every user_state row without touching workout, food or weight logs.
+import { neon } from "@neondatabase/serverless";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
-export const CATEGORY_LABEL: Record<Category, string> = {
-  push: "Push",
-  pull: "Pull",
-  upper: "Upper",
-  legs: "Legs",
-  rest: "Rest",
-};
+const here = dirname(fileURLToPath(import.meta.url));
+const envText = readFileSync(resolve(here, "..", ".env.local"), "utf8");
+for (const line of envText.split("\n")) {
+  const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+  if (!m) continue;
+  let value = m[2];
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  if (!process.env[m[1]]) process.env[m[1]] = value;
+}
 
-export const CATEGORY_ACCENT: Record<Category, string> = {
-  push: "bg-orange-500/15 text-orange-400 border-orange-500/30",
-  pull: "bg-sky-500/15 text-sky-400 border-sky-500/30",
-  upper: "bg-violet-500/15 text-violet-400 border-violet-500/30",
-  legs: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  rest: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
-};
-
-export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
+const TEMPLATES_VERSION = 3;
+const DEFAULT_TEMPLATES = [
   {
     id: "push-strength",
     name: "Push A — Strength",
@@ -108,8 +113,7 @@ export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
     exercises: [],
   },
 ];
-
-export const DEFAULT_SCHEDULE: Record<number, string> = {
+const DEFAULT_SCHEDULE = {
   0: "rest-full",
   1: "push-strength",
   2: "pull-strength",
@@ -119,135 +123,30 @@ export const DEFAULT_SCHEDULE: Record<number, string> = {
   6: "upper-pump",
 };
 
-export const DEFAULT_TARGETS = {
-  waterMl: 2500,
-  proteinG: 150,
-  calories: 2400,
-  fiberG: 30,
-  carbsG: 280,
-  fatsG: 70,
-};
-
-// Bump whenever DEFAULT_TEMPLATES or DEFAULT_SCHEDULE changes meaningfully.
-// Existing user state is migrated to the new plan on next hydration; their
-// workout / food / weight logs are preserved unchanged.
-export const TEMPLATES_VERSION = 3;
-
-// Canonical id → display name. Used at hydration time to defensively detect
-// stale templates (e.g. from importing an old JSON export) even when
-// templatesVersion looks current.
-export const REQUIRED_TEMPLATE_NAMES: Record<string, string> = {
-  "push-strength": "Push A — Strength",
-  "pull-strength": "Pull A — Strength",
-  "rest-light": "Rest / Physio / Walking",
-  "push-hyper": "Push B — Hypertrophy",
-  "pull-width": "Pull B — Hypertrophy",
-  "upper-pump": "Upper Pump — Chest, Shoulders, Arms",
-  "rest-full": "Full Rest",
-};
-
-export const REQUIRED_SCHEDULE: Record<number, string> = {
-  0: "rest-full",
-  1: "push-strength",
-  2: "pull-strength",
-  3: "rest-light",
-  4: "push-hyper",
-  5: "pull-width",
-  6: "upper-pump",
-};
-
-// Old display names that should never be visible in the UI. Used by the
-// validator to catch stale imports.
-export const FORBIDDEN_TEMPLATE_NAMES = new Set<string>([
-  "Push — Strength",
-  "Pull — Strength",
-  "Push — Hypertrophy",
-  "Pull — Width & Detail",
-  "Upper Hypertrophy (Optional)",
-  "Upper Hypertrophy",
-  "Rest / Light Walking",
-]);
-
-type ValidationIssue = { code: string; detail: string };
-
-export function validateTemplates(
-  templates: WorkoutTemplate[],
-  schedule: Record<number, string>
-): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  const seen = new Map<string, WorkoutTemplate>();
-  for (const t of templates) {
-    if (seen.has(t.id)) {
-      issues.push({
-        code: "duplicate-id",
-        detail: `Duplicate template id "${t.id}"`,
-      });
-      continue;
-    }
-    seen.set(t.id, t);
-    if (FORBIDDEN_TEMPLATE_NAMES.has(t.name)) {
-      issues.push({
-        code: "forbidden-name",
-        detail: `Template "${t.id}" still uses old name "${t.name}"`,
-      });
-    }
-  }
-  for (const [id, requiredName] of Object.entries(REQUIRED_TEMPLATE_NAMES)) {
-    const t = seen.get(id);
-    if (!t) {
-      issues.push({
-        code: "missing-template",
-        detail: `Required template "${id}" missing`,
-      });
-      continue;
-    }
-    if (t.name !== requiredName) {
-      issues.push({
-        code: "wrong-name",
-        detail: `Template "${id}" name "${t.name}" must be "${requiredName}"`,
-      });
-    }
-  }
-  for (let dow = 0; dow < 7; dow++) {
-    const expected = REQUIRED_SCHEDULE[dow];
-    if (schedule?.[dow] !== expected) {
-      issues.push({
-        code: "wrong-schedule",
-        detail: `schedule[${dow}] is "${schedule?.[dow]}" — must be "${expected}"`,
-      });
-    }
-  }
-  return issues;
+const sql = neon(process.env.DATABASE_URL);
+const rows = await sql`SELECT user_id, data FROM user_state`;
+for (const row of rows) {
+  const data = row.data;
+  const oldNames = (data?.settings?.templates ?? []).map((t) => t.name);
+  const next = {
+    ...data,
+    settings: {
+      ...(data.settings ?? {}),
+      templates: DEFAULT_TEMPLATES,
+      schedule: DEFAULT_SCHEDULE,
+      templatesVersion: TEMPLATES_VERSION,
+      cycle: undefined,
+      cycleAnchor: undefined,
+    },
+  };
+  delete next.settings.cycle;
+  delete next.settings.cycleAnchor;
+  await sql`
+    UPDATE user_state
+       SET data = ${JSON.stringify(next)},
+           updated_at = now()
+     WHERE user_id = ${row.user_id}
+  `;
+  console.log(`updated ${row.user_id}: was [${oldNames.join(", ")}]`);
 }
-
-export function needsTemplateMigration(
-  templates: WorkoutTemplate[] | undefined,
-  schedule: Record<number, string> | undefined,
-  version: number | undefined
-): boolean {
-  if ((version ?? 0) < TEMPLATES_VERSION) return true;
-  if (!templates || !schedule) return true;
-  return validateTemplates(templates, schedule).length > 0;
-}
-
-export const DEFAULT_SETTINGS: Settings = {
-  unit: "kg",
-  heightCm: 183,
-  targets: DEFAULT_TARGETS,
-  schedule: DEFAULT_SCHEDULE,
-  templates: DEFAULT_TEMPLATES,
-  templatesVersion: TEMPLATES_VERSION,
-  goalWeightKg: 85,
-};
-
-export const DAY_NAMES = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
-
-export const DAY_NAMES_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
+console.log("done");

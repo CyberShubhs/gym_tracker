@@ -28,6 +28,8 @@ import {
   DEFAULT_SETTINGS,
   DEFAULT_TEMPLATES,
   TEMPLATES_VERSION,
+  needsTemplateMigration,
+  validateTemplates,
 } from "./defaults";
 import { loadState, saveState } from "./actions";
 import { plannedTemplate } from "./cycle";
@@ -35,11 +37,26 @@ import { exerciseIdGroup } from "./exercise-aliases";
 
 const CACHE_KEY = "gym-tracker:cache:v3";
 
-// Migrates pre-v2 user settings to the new upper-body plan. Templates and
-// schedule are replaced wholesale; cycle/anchor are dropped so the new
-// weekday schedule applies immediately. Logs are untouched.
+// Migrates user settings to the new upper-body plan whenever the templates
+// version is stale OR the saved templates don't pass validation (e.g. an
+// older JSON import wrote old names back over a freshly-migrated state).
+// Workout / food / weight logs are untouched.
 function migrateSettings(s: AppState["settings"]): AppState["settings"] {
-  if ((s.templatesVersion ?? 0) >= TEMPLATES_VERSION) return s;
+  if (!needsTemplateMigration(s.templates, s.schedule, s.templatesVersion)) {
+    return s;
+  }
+  if (process.env.NODE_ENV !== "production") {
+    const issues = s.templates
+      ? validateTemplates(s.templates, s.schedule ?? {})
+      : [{ code: "missing", detail: "no templates in saved settings" }];
+    if (issues.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[gym-tracker] template validation failed — migrating to defaults",
+        issues
+      );
+    }
+  }
   return {
     ...s,
     templates: DEFAULT_TEMPLATES,
