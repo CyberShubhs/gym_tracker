@@ -1,0 +1,156 @@
+import type { Category, Settings, WorkoutTemplate } from "./types";
+
+export const CATEGORY_LABEL: Record<Category, string> = {
+  push: "Push",
+  pull: "Pull",
+  upper: "Upper",
+  legs: "Legs",
+  rest: "Rest",
+};
+
+export const CATEGORY_ACCENT: Record<Category, string> = {
+  push: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  pull: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  upper: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  legs: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  rest: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+};
+
+export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
+  {
+    id: "push-strength",
+    name: "Push A — Strength",
+    category: "push",
+    focus:
+      "Heavy push day. Prioritise progressive overload on pressing while keeping clean form.",
+    exercises: [
+      { id: "bench", name: "Barbell Bench Press", sets: 4, repsLow: 5, repsHigh: 8, equipment: "barbell" },
+      { id: "incline-db", name: "Incline Dumbbell Press", sets: 3, repsLow: 8, repsHigh: 10, equipment: "dumbbell" },
+      { id: "ohp", name: "Overhead Barbell Press", sets: 3, repsLow: 6, repsHigh: 8, equipment: "barbell" },
+      { id: "cable-lateral", name: "Cable Lateral Raise", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+      { id: "tricep-dips", name: "Assisted Dips / Tricep Dips", sets: 3, repsLow: 8, repsHigh: 12, equipment: "bodyweight" },
+      { id: "rope-pushdown", name: "Rope Pushdowns", sets: 3, repsLow: 10, repsHigh: 15, equipment: "cable" },
+    ],
+  },
+  {
+    id: "pull-strength",
+    name: "Pull A — Strength",
+    category: "pull",
+    focus:
+      "Heavy pull day. Strong back contraction, controlled rows, progressive overload.",
+    exercises: [
+      { id: "lat-pulldown", name: "Lat Pulldown / Assisted Pull-up", sets: 4, repsLow: 6, repsHigh: 10, equipment: "machine" },
+      { id: "barbell-row", name: "Barbell Row", sets: 3, repsLow: 6, repsHigh: 10, equipment: "barbell" },
+      { id: "seated-row", name: "Seated Cable Row", sets: 3, repsLow: 8, repsHigh: 12, equipment: "cable" },
+      { id: "face-pull", name: "Face Pull", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+      { id: "barbell-curl", name: "Barbell Curl", sets: 3, repsLow: 8, repsHigh: 10, equipment: "barbell" },
+      { id: "hammer-curl", name: "Hammer Curl", sets: 3, repsLow: 10, repsHigh: 12, equipment: "dumbbell" },
+    ],
+  },
+  {
+    id: "rest-light",
+    name: "Rest / Physio / Walking",
+    category: "rest",
+    focus:
+      "ACL physio, light walking, mobility, recovery. No extra upper-body lifting.",
+    exercises: [],
+  },
+  {
+    id: "push-hyper",
+    name: "Push B — Hypertrophy",
+    category: "push",
+    focus:
+      "Controlled reps, full range of motion, chest/shoulder/tricep volume.",
+    exercises: [
+      { id: "incline-bb", name: "Incline Barbell Press OR Machine Chest Press", sets: 4, repsLow: 8, repsHigh: 12, equipment: "barbell" },
+      { id: "flat-db-press", name: "Flat Dumbbell Press", sets: 3, repsLow: 8, repsHigh: 12, equipment: "dumbbell" },
+      { id: "db-shoulder-press", name: "Seated Dumbbell Shoulder Press", sets: 3, repsLow: 8, repsHigh: 10, equipment: "dumbbell" },
+      { id: "lateral-slow", name: "Lateral Raise — Slow Tempo", sets: 4, repsLow: 12, repsHigh: 20, equipment: "dumbbell" },
+      { id: "oh-tricep-ext", name: "Overhead Tricep Extension", sets: 3, repsLow: 10, repsHigh: 15, equipment: "dumbbell" },
+      { id: "cable-pushdown", name: "Cable Pushdown", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+    ],
+  },
+  {
+    id: "pull-width",
+    name: "Pull B — Hypertrophy",
+    category: "pull",
+    focus: "Back width, rear delts, clean curls, controlled tempo.",
+    exercises: [
+      { id: "wide-pulldown", name: "Wide-Grip Lat Pulldown", sets: 4, repsLow: 8, repsHigh: 12, equipment: "machine" },
+      { id: "chest-supported-row", name: "Chest-Supported Row", sets: 3, repsLow: 8, repsHigh: 12, equipment: "machine" },
+      { id: "single-arm-row", name: "Single-Arm Dumbbell Row", sets: 3, repsLow: 10, repsHigh: 12, equipment: "dumbbell" },
+      { id: "rear-delt", name: "Rear Delt Fly", sets: 3, repsLow: 12, repsHigh: 20, equipment: "cable" },
+      { id: "preacher-curl", name: "Preacher Curl", sets: 3, repsLow: 10, repsHigh: 12, equipment: "machine" },
+      { id: "cable-curl", name: "Cable Curl", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+    ],
+  },
+  {
+    id: "upper-pump",
+    name: "Upper Pump — Chest, Shoulders, Arms",
+    category: "upper",
+    focus:
+      "Pump-based upper-body session. Keep form clean and avoid over-fatiguing.",
+    exercises: [
+      { id: "chest-fly", name: "Cable Chest Fly", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+      { id: "machine-press", name: "Machine Chest Press", sets: 3, repsLow: 10, repsHigh: 15, equipment: "machine" },
+      { id: "cable-lateral", name: "Cable Lateral Raise", sets: 4, repsLow: 12, repsHigh: 20, equipment: "cable" },
+      { id: "rear-delt-pump", name: "Rear Delt Fly / Face Pull", sets: 3, repsLow: 15, repsHigh: 20, equipment: "cable" },
+      { id: "ez-bar-curl", name: "EZ Bar Curl / Barbell Curl", sets: 3, repsLow: 10, repsHigh: 12, equipment: "barbell" },
+      { id: "rope-pushdown", name: "Rope Pushdown", sets: 3, repsLow: 12, repsHigh: 15, equipment: "cable" },
+      { id: "hammer-curl-optional", name: "Optional Hammer Curl", sets: 2, repsLow: 12, repsHigh: 15, equipment: "dumbbell", notes: "Optional — only if recovery is good." },
+    ],
+  },
+  {
+    id: "rest-full",
+    name: "Full Rest",
+    category: "rest",
+    focus: "Complete rest. Sleep, eat, recover.",
+    exercises: [],
+  },
+];
+
+export const DEFAULT_SCHEDULE: Record<number, string> = {
+  0: "rest-full",
+  1: "push-strength",
+  2: "pull-strength",
+  3: "rest-light",
+  4: "push-hyper",
+  5: "pull-width",
+  6: "upper-pump",
+};
+
+export const DEFAULT_TARGETS = {
+  waterMl: 2500,
+  proteinG: 150,
+  calories: 2400,
+  fiberG: 30,
+  carbsG: 280,
+  fatsG: 70,
+};
+
+// Bump whenever DEFAULT_TEMPLATES or DEFAULT_SCHEDULE changes meaningfully.
+// Existing user state is migrated to the new plan on next hydration; their
+// workout / food / weight logs are preserved unchanged.
+export const TEMPLATES_VERSION = 2;
+
+export const DEFAULT_SETTINGS: Settings = {
+  unit: "kg",
+  heightCm: 183,
+  targets: DEFAULT_TARGETS,
+  schedule: DEFAULT_SCHEDULE,
+  templates: DEFAULT_TEMPLATES,
+  templatesVersion: TEMPLATES_VERSION,
+  goalWeightKg: 85,
+};
+
+export const DAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+export const DAY_NAMES_SHORT = ["S", "M", "T", "W", "T", "F", "S"];

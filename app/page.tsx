@@ -1,65 +1,253 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays } from "lucide-react";
+import { useStore } from "@/lib/store";
+import { todayISO, formatDate, cn } from "@/lib/utils";
+import { CATEGORY_ACCENT, CATEGORY_LABEL, DAY_NAMES } from "@/lib/defaults";
+import { ExerciseCard } from "@/components/exercise-card";
+import { LEGS_TEMPLATE } from "@/lib/legs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { WeightPill } from "@/components/weight-pill";
+import { HeightPill } from "@/components/height-pill";
+import { StreakBar } from "@/components/streak-bar";
+import { RecoveryCard } from "@/components/recovery-card";
+import { FoodTracker } from "@/components/food-tracker";
+import { BmiBar } from "@/components/bmi-bar";
+import { SaveIndicator } from "@/components/save-indicator";
+import { DateNav } from "@/components/date-nav";
+import { DashboardPills } from "@/components/dashboard-pills";
+import {
+  foodStreak,
+  lastNDayFlags,
+  weightDelta,
+  workoutStreak,
+} from "@/lib/progress";
+import { plannedTemplate, shiftCycleTo } from "@/lib/cycle";
+import type { WorkoutTemplate } from "@/lib/types";
+
+export default function HomePage() {
+  const { hydrated, state, updateSettings, ensureWorkoutLog } = useStore();
+  const [date, setDate] = useState<string>(() => todayISO());
+
+  useEffect(() => {
+    setDate(todayISO());
+  }, []);
+
+  const dayOfWeek = useMemo(() => {
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(y, m - 1, d).getDay();
+  }, [date]);
+
+  const scheduledTemplateId = plannedTemplate(date, state.settings);
+  const log = state.workoutLogs[date];
+  // A log only "commits" the templateId if the user actually did something —
+  // empty logs are phantoms from earlier auto-create behavior and should
+  // defer to the cycle plan so future-shifting works.
+  const isCommitted = !!(
+    log &&
+    (Object.keys(log.entries).length > 0 ||
+      log.completedRest ||
+      log.didOptional !== undefined ||
+      log.recovery !== undefined)
+  );
+  const activeTemplateId = isCommitted ? log!.templateId : scheduledTemplateId;
+
+  const template: WorkoutTemplate | undefined = state.settings.templates.find(
+    (t) => t.id === activeTemplateId
+  );
+
+  const pickTemplate = (id: string) => {
+    const shift = shiftCycleTo(date, id, state.settings);
+    if (shift) {
+      updateSettings(shift);
+    } else {
+      // Off-cycle template — commit it explicitly to today's log so it
+      // overrides the plan (no future shift possible).
+      ensureWorkoutLog(date, id);
+    }
+  };
+
+  if (!hydrated) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-2/3" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  const ws = workoutStreak(state, date);
+  const fs = foodStreak(state, date);
+  const wFlags = lastNDayFlags(state, date, 7, "workout");
+  const fFlags = lastNDayFlags(state, date, 7, "food");
+  const { current: currentWeight } = weightDelta(state, date, 7);
+
+  const isOptionalDay = template?.optional ?? false;
+  const isRestDay = template?.category === "rest";
+  const declinedOptional = isOptionalDay && log?.didOptional === false;
+  const showWorkout = !isRestDay && !declinedOptional;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="space-y-5">
+      <header className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              {DAY_NAMES[dayOfWeek]}
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {template?.name ?? "Rest"}
+            </h1>
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <CalendarDays className="h-3.5 w-3.5" />
+              {formatDate(date)}
+              <SaveIndicator />
+            </p>
+          </div>
+          {template && (
+            <div
+              className={cn(
+                "rounded-full border px-3 py-1.5 font-mono text-xs uppercase tracking-wider",
+                CATEGORY_ACCENT[template.category]
+              )}
+            >
+              {CATEGORY_LABEL[template.category]}
+            </div>
+          )}
+        </div>
+
+        <DateNav date={date} onChange={(d) => setDate(d)} />
+
+        <div className="grid grid-cols-2 gap-2">
+          <WeightPill date={date} />
+          <HeightPill />
+        </div>
+        <BmiBar
+          weightKg={
+            state.settings.unit === "lb" && currentWeight != null
+              ? currentWeight / 2.2046
+              : currentWeight
+          }
+          heightCm={state.settings.heightCm}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+        <StreakBar
+          workoutStreak={ws}
+          foodStreak={fs}
+          workoutFlags={wFlags}
+          foodFlags={fFlags}
+        />
+        <DashboardPills date={date} />
+      </header>
+
+      <Tabs defaultValue="workout">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="workout">Workout</TabsTrigger>
+          <TabsTrigger value="food">Food</TabsTrigger>
+          <TabsTrigger value="legs">Legs</TabsTrigger>
+        </TabsList>
+        <TabsContent value="workout" className="space-y-4">
+          {template?.focus && (
+            <p className="rounded-lg border border-border/40 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
+              {template.focus}
+            </p>
+          )}
+
+          <TemplateSwitcher
+            current={activeTemplateId}
+            onSelect={pickTemplate}
+            templates={state.settings.templates}
+          />
+
+          {(isOptionalDay || isRestDay) && (
+            <RecoveryCard date={date} optional={isOptionalDay} />
+          )}
+
+          {showWorkout && template && template.exercises.length > 0 ? (
+            <section className="space-y-4">
+              {template.exercises.map((exercise) => (
+                <ExerciseCard
+                  key={exercise.id}
+                  exercise={exercise}
+                  date={date}
+                  unit={state.settings.unit}
+                />
+              ))}
+            </section>
+          ) : isRestDay ? (
+            <RestState />
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="food" className="space-y-4">
+          <FoodTracker date={date} />
+        </TabsContent>
+
+        <TabsContent value="legs" className="space-y-4">
+          <p className="rounded-lg border border-border/40 bg-card/40 px-3 py-2 text-sm text-muted-foreground">
+            {LEGS_TEMPLATE.focus}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          <section className="space-y-4">
+            {LEGS_TEMPLATE.exercises.map((exercise) => (
+              <ExerciseCard
+                key={exercise.id}
+                exercise={exercise}
+                date={date}
+                unit={state.settings.unit}
+              />
+            ))}
+          </section>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function TemplateSwitcher({
+  current,
+  onSelect,
+  templates,
+}: {
+  current: string;
+  onSelect: (id: string) => void;
+  templates: WorkoutTemplate[];
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {templates.map((t) => (
+        <Button
+          key={t.id}
+          variant={t.id === current ? "default" : "outline"}
+          size="sm"
+          onClick={() => onSelect(t.id)}
+          className="shrink-0"
+        >
+          {t.name}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function RestState() {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center">
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Recovery
+      </p>
+      <p className="mt-2 text-lg font-medium">Rest day. Eat. Sleep. Repeat.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Pick another template above if you want to lift today.
+      </p>
     </div>
   );
 }
