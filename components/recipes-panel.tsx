@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChefHat, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ChefHat, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Recipe, RecipeIngredient } from "@/lib/types";
 import {
   FOOD_PRESETS,
@@ -36,24 +36,82 @@ export type FoodLikeRef = {
   fatsPer?: number;
 };
 
-export function computeRecipeTotals(recipe: Recipe): {
+// Resolve the *current* per-unit macros for an ingredient. If the ingredient
+// references a food id and the resolver finds it, use the live macros; this is
+// how editing a food makes every recipe recompute. Manual ingredients (no
+// foodId) and ingredients whose food was deleted fall back to the snapshot
+// stored on the ingredient row.
+export function liveIngredientMacros(
+  ing: RecipeIngredient,
+  resolver?: (id: string) => FoodLikeRef | undefined
+): {
+  caloriesPer: number;
+  proteinPer: number;
+  fiberPer: number;
+  carbsPer: number;
+  fatsPer: number;
+  isStale: boolean;
+  missing: boolean;
+} {
+  if (ing.foodId && resolver) {
+    const food = resolver(ing.foodId);
+    if (food) {
+      return {
+        caloriesPer: food.caloriesPer,
+        proteinPer: food.proteinPer,
+        fiberPer: food.fiberPer ?? 0,
+        carbsPer: food.carbsPer ?? 0,
+        fatsPer: food.fatsPer ?? 0,
+        isStale: false,
+        missing: false,
+      };
+    }
+    return {
+      caloriesPer: ing.caloriesPer,
+      proteinPer: ing.proteinPer,
+      fiberPer: ing.fiberPer ?? 0,
+      carbsPer: ing.carbsPer ?? 0,
+      fatsPer: ing.fatsPer ?? 0,
+      isStale: true,
+      missing: true,
+    };
+  }
+  return {
+    caloriesPer: ing.caloriesPer,
+    proteinPer: ing.proteinPer,
+    fiberPer: ing.fiberPer ?? 0,
+    carbsPer: ing.carbsPer ?? 0,
+    fatsPer: ing.fatsPer ?? 0,
+    isStale: false,
+    missing: false,
+  };
+}
+
+export function computeRecipeTotals(
+  recipe: Recipe,
+  resolver?: (id: string) => FoodLikeRef | undefined
+): {
   calories: number;
   protein: number;
   fiber: number;
   carbs: number;
   fats: number;
+  missingIds: string[];
 } {
   let calories = 0;
   let protein = 0;
   let fiber = 0;
   let carbs = 0;
   let fats = 0;
+  const missingIds: string[] = [];
   for (const ing of recipe.ingredients) {
-    calories += ing.caloriesPer * ing.amount;
-    protein += ing.proteinPer * ing.amount;
-    fiber += (ing.fiberPer ?? 0) * ing.amount;
-    carbs += (ing.carbsPer ?? 0) * ing.amount;
-    fats += (ing.fatsPer ?? 0) * ing.amount;
+    const live = liveIngredientMacros(ing, resolver);
+    calories += live.caloriesPer * ing.amount;
+    protein += live.proteinPer * ing.amount;
+    fiber += live.fiberPer * ing.amount;
+    carbs += live.carbsPer * ing.amount;
+    fats += live.fatsPer * ing.amount;
+    if (live.missing && ing.foodId) missingIds.push(ing.foodId);
   }
   return {
     calories: Math.round(calories),
@@ -61,6 +119,7 @@ export function computeRecipeTotals(recipe: Recipe): {
     fiber: Math.round(fiber * 10) / 10,
     carbs: Math.round(carbs * 10) / 10,
     fats: Math.round(fats * 10) / 10,
+    missingIds,
   };
 }
 
@@ -145,7 +204,8 @@ export function RecipesPanel({
                 </p>
               )}
               {recipes.map((r) => {
-                const totals = computeRecipeTotals(r);
+                const totals = computeRecipeTotals(r, foodResolver);
+                const hasMissing = totals.missingIds.length > 0;
                 return (
                   <div
                     key={r.id}
@@ -155,6 +215,12 @@ export function RecipesPanel({
                     <div className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm font-medium">
                         {r.name}
+                        {hasMissing && (
+                          <span className="ml-1 inline-flex items-center gap-0.5 align-middle font-mono text-[9px] uppercase tracking-wider text-amber-400">
+                            <AlertTriangle className="h-3 w-3" />
+                            {totals.missingIds.length} missing
+                          </span>
+                        )}
                       </span>
                       <span className="truncate font-mono text-[10px] text-muted-foreground">
                         {totals.calories} kcal · {totals.protein}g P ·{" "}
@@ -249,13 +315,21 @@ function RecipeEditor({
 
   const totals = useMemo(
     () =>
-      computeRecipeTotals({
-        id: "tmp",
-        name,
-        ingredients,
-      }),
-    [ingredients, name]
+      computeRecipeTotals(
+        {
+          id: "tmp",
+          name,
+          ingredients,
+        },
+        foodResolver
+      ),
+    [ingredients, name, foodResolver]
   );
+  const missingNames = useMemo(() => {
+    return ingredients
+      .filter((i) => i.foodId && !foodResolver(i.foodId))
+      .map((i) => i.name);
+  }, [ingredients, foodResolver]);
 
   const addIngredient = (ing: RecipeIngredient) => {
     setIngredients((prev) => [...prev, ing]);
@@ -336,6 +410,7 @@ function RecipeEditor({
                     <IngredientRow
                       key={ing.id}
                       ing={ing}
+                      live={liveIngredientMacros(ing, foodResolver)}
                       onAmountChange={(a) => updateIngredientAmount(ing.id, a)}
                       onRemove={() => removeIngredient(ing.id)}
                     />
@@ -343,6 +418,19 @@ function RecipeEditor({
                 </div>
               )}
             </div>
+
+            {missingNames.length > 0 && (
+              <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                <div className="min-w-0 flex-1 text-xs text-amber-200/90">
+                  <p className="font-medium">Missing ingredient food</p>
+                  <p className="font-mono text-[10px] text-amber-200/70">
+                    {missingNames.join(", ")} — using last snapshot. Re-link by
+                    removing and adding again.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-5 gap-1.5 rounded-lg border border-border/60 bg-card/40 p-2 text-center">
               <Stat label="kcal" value={totals.calories} />
@@ -387,24 +475,39 @@ function RecipeEditor({
 
 function IngredientRow({
   ing,
+  live,
   onAmountChange,
   onRemove,
 }: {
   ing: RecipeIngredient;
+  live: ReturnType<typeof liveIngredientMacros>;
   onAmountChange: (a: number) => void;
   onRemove: () => void;
 }) {
   const [amt, setAmt] = useState(String(ing.amount));
-  const kcal = Math.round(ing.caloriesPer * ing.amount);
-  const pro = Math.round(ing.proteinPer * ing.amount * 10) / 10;
+  const kcal = Math.round(live.caloriesPer * ing.amount);
+  const pro = Math.round(live.proteinPer * ing.amount * 10) / 10;
 
   return (
-    <div className="flex items-center gap-2 rounded-md border border-border/60 bg-card/30 px-2 py-1.5">
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md border bg-card/30 px-2 py-1.5",
+        live.missing
+          ? "border-amber-500/40 bg-amber-500/5"
+          : "border-border/60"
+      )}
+    >
       <span className="text-base">{ing.emoji ?? "🍽"}</span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{ing.name}</span>
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span
+          className={cn(
+            "font-mono text-[10px]",
+            live.missing ? "text-amber-300/80" : "text-muted-foreground"
+          )}
+        >
           {kcal} kcal · {pro}g P
+          {live.missing && " · linked food deleted"}
         </span>
       </div>
       <div className="flex items-center gap-1">

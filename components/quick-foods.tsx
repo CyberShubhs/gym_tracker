@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import {
   ChefHat,
   History as HistoryIcon,
+  Info,
   Pencil,
   Plus,
   RefreshCcw,
@@ -30,7 +31,12 @@ import type {
   Recipe,
 } from "@/lib/types";
 import { EmojiPicker, suggestEmoji } from "@/components/emoji-picker";
-import { RecipesPanel, computeRecipeTotals } from "@/components/recipes-panel";
+import {
+  RecipesPanel,
+  computeRecipeTotals,
+  liveIngredientMacros,
+  type FoodLikeRef,
+} from "@/components/recipes-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +82,15 @@ function applyOverride(
   return { ...preset, ...override };
 }
 
+function presetSourceFor(food: AnyFood): string | undefined {
+  // Only built-in presets carry a canonical source. Custom foods have none.
+  if ("__preset" in food && food.__preset) {
+    const p = FOOD_PRESETS.find((x) => x.id === food.id);
+    return p?.source;
+  }
+  return undefined;
+}
+
 function entrySource(food: FoodLike): "preset" | "custom" {
   return food.__isCustom ? "custom" : "preset";
 }
@@ -101,9 +116,11 @@ function makeEntryFromFood(
 }
 
 function makeEntryFromRecipe(
-  recipe: Recipe
+  recipe: Recipe,
+  resolver?: (id: string) => FoodLikeRef | undefined
 ): Omit<FoodEntry, "id" | "ts" | "date"> {
-  const totals = computeRecipeTotals(recipe);
+  // Always use live macros so editing an ingredient food updates new logs.
+  const totals = computeRecipeTotals(recipe, resolver);
   return {
     source: "recipe",
     sourceFoodId: recipe.id,
@@ -137,6 +154,8 @@ export function QuickFoods({ date }: { date: string }) {
 
   const [pickedFood, setPickedFood] = useState<AnyFood | null>(null);
   const [editingPreset, setEditingPreset] = useState<FoodPreset | null>(null);
+  const [editingCustomFood, setEditingCustomFood] =
+    useState<CustomFood | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showCustoms, setShowCustoms] = useState(false);
   const [showRepeatConfirm, setShowRepeatConfirm] = useState(false);
@@ -240,8 +259,12 @@ export function QuickFoods({ date }: { date: string }) {
     addFoodEntry(date, makeEntryFromFood(food, food.defaultAmount));
   };
 
+  const foodResolverForRecipes = useMemo<
+    (id: string) => FoodLikeRef | undefined
+  >(() => (id) => foodById.get(id), [foodById]);
+
   const quickAddRecipe = (recipe: Recipe) => {
-    addFoodEntry(date, makeEntryFromRecipe(recipe));
+    addFoodEntry(date, makeEntryFromRecipe(recipe, foodResolverForRecipes));
   };
 
   const editPresetFor = (food: FoodLike) => {
@@ -250,7 +273,19 @@ export function QuickFoods({ date }: { date: string }) {
     setEditingPreset(applyOverride(original, overrides[original.id]));
   };
 
-  const customAmount = (food: FoodLike) => {
+  // Open the right edit dialog whether this is a custom food or a preset.
+  const editFood = (food: FoodLike) => {
+    if (food.__isCustom) {
+      const cf = customFoods.find((x) => x.id === food.id);
+      if (cf) setEditingCustomFood({ ...cf });
+      return;
+    }
+    editPresetFor(food);
+  };
+
+  // Open the detail dialog (long-press / info button). Same view for preset
+  // and custom — the dialog itself routes edit through `editFood`.
+  const openDetail = (food: FoodLike) => {
     if (food.__isCustom) {
       const cf = customFoods.find((x) => x.id === food.id);
       if (cf) {
@@ -316,6 +351,7 @@ export function QuickFoods({ date }: { date: string }) {
                   <RecipeChip
                     key={`r-${r.id}`}
                     recipe={r}
+                    resolver={foodResolverForRecipes}
                     onTap={() => quickAddRecipe(r)}
                     onView={() => setViewingRecipe(r)}
                   />
@@ -327,10 +363,8 @@ export function QuickFoods({ date }: { date: string }) {
                     mine={!!f.__isCustom}
                     edited={!f.__isCustom && !!overrides[f.id]}
                     onTap={() => quickAdd(f)}
-                    onCustomAmount={() => customAmount(f)}
-                    onEdit={
-                      f.__isCustom ? undefined : () => editPresetFor(f)
-                    }
+                    onOpenDetail={() => openDetail(f)}
+                    onEdit={() => editFood(f)}
                   />
                 ))}
               </div>
@@ -349,6 +383,7 @@ export function QuickFoods({ date }: { date: string }) {
                     <RecipeChip
                       key={`recipe-${r.id}`}
                       recipe={r}
+                      resolver={foodResolverForRecipes}
                       onTap={() => quickAddRecipe(r)}
                       onView={() => setViewingRecipe(r)}
                     />
@@ -370,10 +405,8 @@ export function QuickFoods({ date }: { date: string }) {
                       mine={!!f.__isCustom}
                       edited={!f.__isCustom && !!overrides[f.id]}
                       onTap={() => quickAdd(f)}
-                      onCustomAmount={() => customAmount(f)}
-                      onEdit={
-                        f.__isCustom ? undefined : () => editPresetFor(f)
-                      }
+                      onOpenDetail={() => openDetail(f)}
+                      onEdit={() => editFood(f)}
                     />
                   ))}
                 </div>
@@ -398,10 +431,8 @@ export function QuickFoods({ date }: { date: string }) {
                         mine={!!f.__isCustom}
                         edited={!f.__isCustom && !!overrides[f.id]}
                         onTap={() => quickAdd(f)}
-                        onCustomAmount={() => customAmount(f)}
-                        onEdit={
-                          f.__isCustom ? undefined : () => editPresetFor(f)
-                        }
+                        onOpenDetail={() => openDetail(f)}
+                        onEdit={() => editFood(f)}
                       />
                     ))}
                   </div>
@@ -433,46 +464,56 @@ export function QuickFoods({ date }: { date: string }) {
 
         <RecipesPanel
           recipes={recipes}
-          foodResolver={(id) => foodById.get(id)}
+          foodResolver={foodResolverForRecipes}
           onSave={upsertRecipe}
           onRemove={removeRecipe}
           onAddRecipeToLog={(r) =>
-            addFoodEntry(date, makeEntryFromRecipe(r))
+            addFoodEntry(date, makeEntryFromRecipe(r, foodResolverForRecipes))
           }
           onAddIngredientsToLog={(r) => {
-            const totals = computeRecipeTotals(r);
-            // Add each ingredient as its own entry so the user gets a
-            // per-item view. Skip the totals/recipe-as-entry approach here.
+            // Add each ingredient as its own entry using LIVE macros from
+            // its linked food so edits to source foods are reflected.
             const entries = r.ingredients
               .filter((ing) => ing.amount > 0)
-              .map((ing) => ({
-                source: "recipe" as const,
-                sourceFoodId: ing.foodId,
-                name: `${r.name} · ${ing.name}`,
-                emoji: ing.emoji ?? r.emoji,
-                amount: ing.amount,
-                unit: ing.unit,
-                calories: Math.round(ing.caloriesPer * ing.amount),
-                proteinG:
-                  Math.round(ing.proteinPer * ing.amount * 10) / 10,
-                fiberG:
-                  Math.round((ing.fiberPer ?? 0) * ing.amount * 10) / 10,
-                carbsG:
-                  Math.round((ing.carbsPer ?? 0) * ing.amount * 10) / 10,
-                fatsG:
-                  Math.round((ing.fatsPer ?? 0) * ing.amount * 10) / 10,
-              }));
-            void totals;
+              .map((ing) => {
+                const live = liveIngredientMacros(ing, foodResolverForRecipes);
+                return {
+                  source: "recipe" as const,
+                  sourceFoodId: ing.foodId,
+                  name: `${r.name} · ${ing.name}`,
+                  emoji: ing.emoji ?? r.emoji,
+                  amount: ing.amount,
+                  unit: ing.unit,
+                  calories: Math.round(live.caloriesPer * ing.amount),
+                  proteinG:
+                    Math.round(live.proteinPer * ing.amount * 10) / 10,
+                  fiberG:
+                    Math.round(live.fiberPer * ing.amount * 10) / 10,
+                  carbsG:
+                    Math.round(live.carbsPer * ing.amount * 10) / 10,
+                  fatsG:
+                    Math.round(live.fatsPer * ing.amount * 10) / 10,
+                };
+              });
             addFoodEntries(date, entries);
           }}
         />
       </CardContent>
 
       {pickedFood && (
-        <AmountDialog
+        <FoodDetailDialog
           food={pickedFood}
+          mine={!("__preset" in pickedFood && pickedFood.__preset)}
+          edited={
+            "__preset" in pickedFood && pickedFood.__preset
+              ? !!overrides[pickedFood.id]
+              : false
+          }
+          source={presetSourceFor(pickedFood)}
           onClose={() => setPickedFood(null)}
           onConfirm={(amount) => {
+            const isPreset =
+              "__preset" in pickedFood && pickedFood.__preset === true;
             const fl: FoodLike = {
               id: pickedFood.id,
               name: pickedFood.name,
@@ -484,20 +525,33 @@ export function QuickFoods({ date }: { date: string }) {
               fiberPer: pickedFood.fiberPer,
               carbsPer: pickedFood.carbsPer,
               fatsPer: pickedFood.fatsPer,
-              __isCustom: !("__preset" in pickedFood && pickedFood.__preset),
+              __isCustom: !isPreset,
             };
             addFoodEntry(date, makeEntryFromFood(fl, amount));
             setPickedFood(null);
           }}
-          onEdit={
-            "__preset" in pickedFood && pickedFood.__preset
-              ? () => {
-                  const p = FOOD_PRESETS.find((x) => x.id === pickedFood.id);
-                  setPickedFood(null);
-                  if (p) setEditingPreset(applyOverride(p, overrides[p.id]));
-                }
-              : undefined
-          }
+          onEdit={() => {
+            if ("__preset" in pickedFood && pickedFood.__preset) {
+              const p = FOOD_PRESETS.find((x) => x.id === pickedFood.id);
+              setPickedFood(null);
+              if (p) setEditingPreset(applyOverride(p, overrides[p.id]));
+            } else {
+              const cf = customFoods.find((x) => x.id === pickedFood.id);
+              setPickedFood(null);
+              if (cf) setEditingCustomFood({ ...cf });
+            }
+          }}
+        />
+      )}
+
+      {editingCustomFood && (
+        <EditCustomDialog
+          food={editingCustomFood}
+          onClose={() => setEditingCustomFood(null)}
+          onSave={(f) => {
+            upsertCustomFood(f);
+            setEditingCustomFood(null);
+          }}
         />
       )}
 
@@ -520,6 +574,7 @@ export function QuickFoods({ date }: { date: string }) {
 
       {showCreate && (
         <CreateCustomDialog
+          existing={customFoods}
           onClose={() => setShowCreate(false)}
           onSave={(food) => {
             upsertCustomFood(food);
@@ -544,9 +599,13 @@ export function QuickFoods({ date }: { date: string }) {
       {viewingRecipe && (
         <RecipeDetailDialog
           recipe={viewingRecipe}
+          resolver={foodResolverForRecipes}
           onClose={() => setViewingRecipe(null)}
           onAdd={() => {
-            addFoodEntry(date, makeEntryFromRecipe(viewingRecipe));
+            addFoodEntry(
+              date,
+              makeEntryFromRecipe(viewingRecipe, foodResolverForRecipes)
+            );
             setViewingRecipe(null);
           }}
         />
@@ -584,15 +643,15 @@ export function QuickFoods({ date }: { date: string }) {
 function FoodChip({
   food,
   onTap,
-  onCustomAmount,
+  onOpenDetail,
   onEdit,
   edited,
   mine,
 }: {
   food: FoodLike;
   onTap: () => void;
-  onCustomAmount: () => void;
-  onEdit?: () => void;
+  onOpenDetail: () => void;
+  onEdit: () => void;
   edited?: boolean;
   mine?: boolean;
 }) {
@@ -604,7 +663,7 @@ function FoodChip({
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       longPressTriggered.current = true;
-      onCustomAmount();
+      onOpenDetail();
     }, 500);
   };
   const cancelLongPress = () => {
@@ -637,14 +696,14 @@ function FoodChip({
         }}
         onContextMenu={(e) => {
           e.preventDefault();
-          onCustomAmount();
+          onOpenDetail();
         }}
         onTouchStart={startLongPress}
         onTouchEnd={cancelLongPress}
         onTouchMove={cancelLongPress}
         onTouchCancel={cancelLongPress}
         className="flex min-w-0 flex-1 flex-col gap-1 px-2.5 py-2 text-left text-sm select-none [-webkit-touch-callout:none]"
-        aria-label={`Add ${amountLabel} ${food.name}. Long press for custom amount.`}
+        aria-label={`Add ${amountLabel} ${food.name}. Long press or tap info for details.`}
       >
         <span className="flex min-w-0 items-center gap-1.5 leading-tight">
           <span className="shrink-0 text-lg">{food.emoji ?? "🍽"}</span>
@@ -652,12 +711,12 @@ function FoodChip({
             {food.name}
           </span>
           {mine && (
-            <span className="shrink-0 font-mono text-[9px] text-emerald-400">
+            <span className="shrink-0 rounded-sm border border-emerald-500/40 bg-emerald-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-emerald-300">
               yours
             </span>
           )}
           {edited && (
-            <span className="shrink-0 font-mono text-[9px] text-amber-400">
+            <span className="shrink-0 rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-amber-300">
               edited
             </span>
           )}
@@ -677,25 +736,25 @@ function FoodChip({
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onCustomAmount();
+            onOpenDetail();
           }}
-          aria-label="Custom amount"
+          aria-label={`View details for ${food.name}`}
+          title="Details / custom amount"
           className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
         >
-          <Sliders className="h-3.5 w-3.5" />
+          <Info className="h-3.5 w-3.5" />
         </button>
-        {onEdit && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit();
-            }}
-            aria-label="Edit defaults"
-            className="rounded-md p-1 text-muted-foreground opacity-60 transition-opacity hover:bg-muted/50 hover:text-foreground hover:opacity-100"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit();
+          }}
+          aria-label={`Edit ${food.name}`}
+          title="Edit food"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
       </div>
     </div>
   );
@@ -703,10 +762,12 @@ function FoodChip({
 
 function RecipeChip({
   recipe,
+  resolver,
   onTap,
   onView,
 }: {
   recipe: Recipe;
+  resolver?: (id: string) => FoodLikeRef | undefined;
   onTap: () => void;
   onView: () => void;
 }) {
@@ -728,8 +789,9 @@ function RecipeChip({
     }
   };
 
-  const totals = computeRecipeTotals(recipe);
+  const totals = computeRecipeTotals(recipe, resolver);
   const itemCount = recipe.ingredients.length;
+  const hasMissing = totals.missingIds.length > 0;
 
   return (
     <div className="group relative flex items-stretch gap-1 overflow-hidden rounded-lg border border-violet-500/60 bg-violet-500/10 ring-1 ring-violet-500/20 transition-colors hover:border-violet-400 hover:bg-violet-500/15">
@@ -761,6 +823,14 @@ function RecipeChip({
           <span className="shrink-0 rounded-md border border-violet-500/40 bg-violet-500/15 px-1 font-mono text-[8px] uppercase tracking-wider text-violet-300">
             recipe
           </span>
+          {hasMissing && (
+            <span
+              className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-amber-300"
+              title="One or more linked ingredient foods are missing"
+            >
+              !
+            </span>
+          )}
         </span>
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
           <span className="text-foreground/85">{totals.calories} kcal</span>
@@ -789,16 +859,22 @@ function RecipeChip({
   );
 }
 
-function AmountDialog({
+function FoodDetailDialog({
   food,
+  source,
+  mine,
+  edited,
   onClose,
   onConfirm,
   onEdit,
 }: {
   food: AnyFood;
+  source?: string;
+  mine?: boolean;
+  edited?: boolean;
   onClose: () => void;
   onConfirm: (amount: number) => void;
-  onEdit?: () => void;
+  onEdit: () => void;
 }) {
   const [amount, setAmount] = useState(String(food.defaultAmount));
   const n = parseFloat(amount);
@@ -806,39 +882,44 @@ function AmountDialog({
   const macros = valid
     ? calcMacros(food, n)
     : { calories: 0, protein: 0, fiber: 0, carbs: 0, fats: 0 };
+  const perAmount =
+    food.unit === "piece" ? 1 : food.defaultAmount;
   const perLabel =
     food.unit === "piece"
       ? "per 1 piece"
-      : `per 1 ${food.unit}`;
+      : `per ${food.defaultAmount}${UNIT_LABEL[food.unit]}`;
+  const perKcal = Math.round(food.caloriesPer * perAmount);
+  const perPro = Math.round(food.proteinPer * perAmount * 10) / 10;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xs">
         <DialogHeader>
-          <DialogTitle className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0">{food.emoji ?? "🍽"}</span>
-              <span className="truncate">{food.name}</span>
-            </span>
-            {onEdit && (
-              <button
-                onClick={onEdit}
-                className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-foreground"
-                aria-label="Edit defaults"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+          <DialogTitle className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xl">{food.emoji ?? "🍽"}</span>
+            <span className="min-w-0 flex-1 truncate">{food.name}</span>
+            {mine && (
+              <span className="shrink-0 rounded-sm border border-emerald-500/40 bg-emerald-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-emerald-300">
+                yours
+              </span>
+            )}
+            {edited && (
+              <span className="shrink-0 rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-amber-300">
+                edited
+              </span>
             )}
           </DialogTitle>
           <DialogDescription className="font-mono text-xs">
-            {perLabel}: {food.caloriesPer} kcal · {food.proteinPer}g protein
+            {perLabel}: {perKcal} kcal · {perPro}g protein
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="amount">Amount ({UNIT_LABEL[food.unit]})</Label>
+            <Label htmlFor="fd-amount">
+              Amount ({UNIT_LABEL[food.unit]})
+            </Label>
             <Input
-              id="amount"
+              id="fd-amount"
               inputMode="decimal"
               type="number"
               step={food.unit === "piece" ? "1" : "5"}
@@ -855,12 +936,27 @@ function AmountDialog({
             <MacroStat label="F" value={macros.fats} />
             <MacroStat label="Fib" value={macros.fiber} />
           </div>
+          {source && (
+            <p className="rounded-md border border-border/40 bg-card/40 px-2.5 py-1.5 font-mono text-[10px] text-muted-foreground">
+              <span className="text-foreground/80">Source: </span>
+              {source}
+            </p>
+          )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-2">
+          <Button
+            variant="ghost"
+            onClick={onEdit}
+            className="text-muted-foreground"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            Close
           </Button>
           <Button onClick={() => valid && onConfirm(n)} disabled={!valid}>
+            <Plus className="h-3.5 w-3.5" />
             Add
           </Button>
         </DialogFooter>
@@ -1098,9 +1194,11 @@ function NumField({
 }
 
 function CreateCustomDialog({
+  existing,
   onClose,
   onSave,
 }: {
+  existing: CustomFood[];
   onClose: () => void;
   onSave: (food: CustomFood) => void;
 }) {
@@ -1127,6 +1225,14 @@ function CreateCustomDialog({
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return setError("Name required");
+    // Duplicate-name protection (case-insensitive). User can still pick a
+    // different name to add another entry; this is just a guard.
+    const normalized = trimmed.toLowerCase();
+    if (existing.some((c) => c.name.trim().toLowerCase() === normalized)) {
+      return setError(
+        `“${trimmed}” already exists in My foods. Edit that one or rename this.`
+      );
+    }
     const ref = unit === "piece" ? 1 : parseFloat(refAmount);
     const cal = parseFloat(calories);
     const pro = parseFloat(protein);
@@ -1134,9 +1240,13 @@ function CreateCustomDialog({
     const car = parseFloat(carbs) || 0;
     const fat = parseFloat(fats) || 0;
     if (!Number.isFinite(ref) || ref <= 0)
-      return setError("Reference amount > 0");
-    if (!Number.isFinite(cal) || cal < 0) return setError("Calories invalid");
-    if (!Number.isFinite(pro) || pro < 0) return setError("Protein invalid");
+      return setError("Reference amount must be greater than 0");
+    if (!Number.isFinite(cal) || cal < 0)
+      return setError("Calories must be 0 or more");
+    if (!Number.isFinite(pro) || pro < 0)
+      return setError("Protein must be 0 or more");
+    if (fib < 0 || car < 0 || fat < 0)
+      return setError("Macros cannot be negative");
     const id =
       "custom-" +
       trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") +
@@ -1431,9 +1541,14 @@ function EditCustomDialog({
     const fib = parseFloat(fiber) || 0;
     const car = parseFloat(carbs) || 0;
     const fat = parseFloat(fats) || 0;
-    if (!Number.isFinite(ref) || ref <= 0) return setError("Reference > 0");
-    if (!Number.isFinite(cal) || cal < 0) return setError("Calories invalid");
-    if (!Number.isFinite(pro) || pro < 0) return setError("Protein invalid");
+    if (!Number.isFinite(ref) || ref <= 0)
+      return setError("Reference amount must be greater than 0");
+    if (!Number.isFinite(cal) || cal < 0)
+      return setError("Calories must be 0 or more");
+    if (!Number.isFinite(pro) || pro < 0)
+      return setError("Protein must be 0 or more");
+    if (fib < 0 || car < 0 || fat < 0)
+      return setError("Macros cannot be negative");
     onSave({
       ...food,
       name: trimmed,
@@ -1562,14 +1677,18 @@ function EditCustomDialog({
 
 function RecipeDetailDialog({
   recipe,
+  resolver,
   onClose,
   onAdd,
+  onEdit,
 }: {
   recipe: Recipe;
+  resolver?: (id: string) => FoodLikeRef | undefined;
   onClose: () => void;
   onAdd: () => void;
+  onEdit?: () => void;
 }) {
-  const totals = computeRecipeTotals(recipe);
+  const totals = computeRecipeTotals(recipe, resolver);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -1594,21 +1713,36 @@ function RecipeDetailDialog({
             <MacroStat label="F" value={totals.fats} />
             <MacroStat label="Fib" value={totals.fiber} />
           </div>
+          {totals.missingIds.length > 0 && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/5 px-2.5 py-1.5 font-mono text-[10px] text-amber-300">
+              {totals.missingIds.length} linked ingredient food
+              {totals.missingIds.length === 1 ? "" : "s"} missing — using last
+              snapshot.
+            </p>
+          )}
           <div className="space-y-1">
-            {recipe.ingredients.map((ing) => (
-              <div
-                key={ing.id}
-                className="flex items-center gap-2 rounded-md border border-border/60 bg-card/30 px-2 py-1.5"
-              >
-                <span className="text-base">{ing.emoji ?? "🍽"}</span>
-                <span className="flex-1 truncate text-sm">{ing.name}</span>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {ing.amount}
-                  {UNIT_LABEL[ing.unit]} ·{" "}
-                  {Math.round(ing.caloriesPer * ing.amount)} kcal
-                </span>
-              </div>
-            ))}
+            {recipe.ingredients.map((ing) => {
+              const live = liveIngredientMacros(ing, resolver);
+              return (
+                <div
+                  key={ing.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border bg-card/30 px-2 py-1.5",
+                    live.missing
+                      ? "border-amber-500/40 bg-amber-500/5"
+                      : "border-border/60"
+                  )}
+                >
+                  <span className="text-base">{ing.emoji ?? "🍽"}</span>
+                  <span className="flex-1 truncate text-sm">{ing.name}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {ing.amount}
+                    {UNIT_LABEL[ing.unit]} ·{" "}
+                    {Math.round(live.caloriesPer * ing.amount)} kcal
+                  </span>
+                </div>
+              );
+            })}
             {recipe.ingredients.length === 0 && (
               <p className="rounded-md border border-dashed border-border/60 p-3 text-center text-xs text-muted-foreground">
                 No ingredients yet.
@@ -1616,7 +1750,17 @@ function RecipeDetailDialog({
             )}
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="gap-2">
+          {onEdit && (
+            <Button
+              variant="ghost"
+              onClick={onEdit}
+              className="text-muted-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          )}
           <Button variant="outline" onClick={onClose}>
             Close
           </Button>

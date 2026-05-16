@@ -22,6 +22,9 @@ export type FoodPreset = {
   carbsPer?: number;
   fatsPer?: number;
   category: FoodCategory;
+  // Short citation for the macro numbers (e.g. "USDA FDC #171477"). Surfaced
+  // in the food detail modal so users can sanity-check what's loaded.
+  source?: string;
 };
 
 export type CustomFood = {
@@ -35,6 +38,7 @@ export type CustomFood = {
   fiberPer?: number;
   carbsPer?: number;
   fatsPer?: number;
+  source?: string;
 };
 
 export const CATEGORY_LABEL: Record<FoodCategory, string> = {
@@ -54,9 +58,11 @@ export const CATEGORY_ORDER: FoodCategory[] = [
   "fat",
 ];
 
-// Macros per gram (or per piece for whole items). For brevity, sources are
-// USDA / standard nutrition databases. Numbers rounded to keep the file
-// readable — log totals get rounded again at the UI layer.
+// Macros per gram (or per piece for whole items). Reference numbers from
+// USDA FoodData Central (FDC) and Indian Food Composition Tables (IFCT) for
+// Indian-specific items. Sources are cited per-food so users can sanity-check
+// the values via the food detail modal. Numbers are scaled to per-unit; UI
+// rounds totals before display.
 export const FOOD_PRESETS: FoodPreset[] = [
   // Veg (per gram)
   {
@@ -71,6 +77,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 0.06,
     fatsPer: 0.003,
     category: "veg",
+    source: "USDA FDC #170427 (red sweet pepper, raw)",
   },
   {
     id: "bell-green",
@@ -82,8 +89,9 @@ export const FOOD_PRESETS: FoodPreset[] = [
     proteinPer: 0.0086,
     fiberPer: 0.017,
     carbsPer: 0.047,
-    fatsPer: 0.002,
+    fatsPer: 0.0017,
     category: "veg",
+    source: "USDA FDC #170427 (green sweet pepper, raw)",
   },
   {
     id: "bell-yellow",
@@ -95,8 +103,9 @@ export const FOOD_PRESETS: FoodPreset[] = [
     proteinPer: 0.01,
     fiberPer: 0.009,
     carbsPer: 0.064,
-    fatsPer: 0.002,
+    fatsPer: 0.0021,
     category: "veg",
+    source: "USDA FDC #170427 (yellow sweet pepper, raw)",
   },
   {
     id: "cucumber",
@@ -105,11 +114,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.15,
-    proteinPer: 0.007,
+    proteinPer: 0.0065,
     fiberPer: 0.005,
     carbsPer: 0.036,
-    fatsPer: 0.001,
+    fatsPer: 0.0011,
     category: "veg",
+    source: "USDA FDC #168409 (cucumber with peel, raw)",
   },
   {
     id: "tomato",
@@ -118,11 +128,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.18,
-    proteinPer: 0.009,
+    proteinPer: 0.0088,
     fiberPer: 0.012,
     carbsPer: 0.039,
     fatsPer: 0.002,
     category: "veg",
+    source: "USDA FDC #170457 (tomato, raw)",
   },
   {
     id: "broccoli",
@@ -131,11 +142,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.34,
-    proteinPer: 0.028,
+    proteinPer: 0.0282,
     fiberPer: 0.026,
-    carbsPer: 0.067,
-    fatsPer: 0.004,
+    carbsPer: 0.0664,
+    fatsPer: 0.0037,
     category: "veg",
+    source: "USDA FDC #170379 (broccoli, raw)",
   },
   {
     id: "spinach",
@@ -144,11 +156,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.23,
-    proteinPer: 0.029,
+    proteinPer: 0.0286,
     fiberPer: 0.022,
-    carbsPer: 0.036,
-    fatsPer: 0.004,
+    carbsPer: 0.0363,
+    fatsPer: 0.0039,
     category: "veg",
+    source: "USDA FDC #168462 (spinach, raw)",
   },
   {
     id: "salad-mixed",
@@ -162,6 +175,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 0.035,
     fatsPer: 0.003,
     category: "veg",
+    source: "Generic estimate, mixed greens + veg blend",
   },
 
   // Eggs (per gram — sizes vary too much to use pieces)
@@ -174,9 +188,10 @@ export const FOOD_PRESETS: FoodPreset[] = [
     caloriesPer: 0.52,
     proteinPer: 0.109,
     fiberPer: 0,
-    carbsPer: 0.007,
-    fatsPer: 0.002,
+    carbsPer: 0.0073,
+    fatsPer: 0.0017,
     category: "protein",
+    source: "USDA FDC #748967 (egg white, raw, fresh)",
   },
   {
     id: "egg-yolk",
@@ -185,11 +200,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 50,
     caloriesPer: 3.22,
-    proteinPer: 0.159,
+    proteinPer: 0.1587,
     fiberPer: 0,
-    carbsPer: 0.036,
-    fatsPer: 0.267,
+    carbsPer: 0.0364,
+    fatsPer: 0.2654,
     category: "protein",
+    source: "USDA FDC #172183 (egg yolk, raw, fresh)",
   },
   {
     id: "egg-whole",
@@ -197,12 +213,13 @@ export const FOOD_PRESETS: FoodPreset[] = [
     emoji: "🥚",
     unit: "g",
     defaultAmount: 50,
-    caloriesPer: 1.55,
-    proteinPer: 0.126,
+    caloriesPer: 1.43,
+    proteinPer: 0.1256,
     fiberPer: 0,
-    carbsPer: 0.011,
-    fatsPer: 0.106,
+    carbsPer: 0.0072,
+    fatsPer: 0.0951,
     category: "protein",
+    source: "USDA FDC #748967 (whole egg, raw, fresh)",
   },
 
   // Fats (per gram)
@@ -215,9 +232,10 @@ export const FOOD_PRESETS: FoodPreset[] = [
     caloriesPer: 1.6,
     proteinPer: 0.02,
     fiberPer: 0.067,
-    carbsPer: 0.085,
-    fatsPer: 0.147,
+    carbsPer: 0.0853,
+    fatsPer: 0.1466,
     category: "fat",
+    source: "USDA FDC #171705 (avocado, raw, all varieties)",
   },
   {
     id: "almonds",
@@ -226,11 +244,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 30,
     caloriesPer: 5.79,
-    proteinPer: 0.21,
+    proteinPer: 0.2115,
     fiberPer: 0.125,
-    carbsPer: 0.216,
-    fatsPer: 0.499,
+    carbsPer: 0.2161,
+    fatsPer: 0.4993,
     category: "fat",
+    source: "USDA FDC #170567 (almonds, raw)",
   },
   {
     id: "peanut-butter",
@@ -239,11 +258,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 30,
     caloriesPer: 5.88,
-    proteinPer: 0.25,
+    proteinPer: 0.2249,
     fiberPer: 0.06,
-    carbsPer: 0.2,
-    fatsPer: 0.5,
+    carbsPer: 0.2189,
+    fatsPer: 0.5036,
     category: "fat",
+    source: "USDA FDC #172470 (peanut butter, smooth)",
   },
   {
     id: "olive-oil",
@@ -257,6 +277,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 0,
     fatsPer: 1,
     category: "fat",
+    source: "USDA FDC #748608 (olive oil, ~0.92 g/ml density)",
   },
 
   // Fruits
@@ -272,6 +293,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 27,
     fatsPer: 0.4,
     category: "fruit",
+    source: "USDA FDC #173944 (banana, raw, medium ~118 g)",
   },
   {
     id: "apple",
@@ -285,6 +307,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 25,
     fatsPer: 0.3,
     category: "fruit",
+    source: "USDA FDC #171688 (apple with skin, raw, medium ~182 g)",
   },
   {
     id: "orange",
@@ -298,6 +321,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 15,
     fatsPer: 0.2,
     category: "fruit",
+    source: "USDA FDC #169097 (orange, raw, medium ~131 g)",
   },
   {
     id: "mango",
@@ -306,11 +330,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.6,
-    proteinPer: 0.008,
+    proteinPer: 0.0082,
     fiberPer: 0.016,
-    carbsPer: 0.15,
-    fatsPer: 0.004,
+    carbsPer: 0.1498,
+    fatsPer: 0.0038,
     category: "fruit",
+    source: "USDA FDC #169910 (mango, raw)",
   },
   {
     id: "watermelon",
@@ -319,11 +344,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.3,
-    proteinPer: 0.006,
+    proteinPer: 0.0061,
     fiberPer: 0.004,
-    carbsPer: 0.076,
-    fatsPer: 0.002,
+    carbsPer: 0.0755,
+    fatsPer: 0.0015,
     category: "fruit",
+    source: "USDA FDC #167765 (watermelon, raw)",
   },
   {
     id: "strawberry",
@@ -332,11 +358,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.32,
-    proteinPer: 0.007,
+    proteinPer: 0.0067,
     fiberPer: 0.02,
-    carbsPer: 0.077,
+    carbsPer: 0.0768,
     fatsPer: 0.003,
     category: "fruit",
+    source: "USDA FDC #167762 (strawberries, raw)",
   },
   {
     id: "pineapple",
@@ -345,11 +372,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.5,
-    proteinPer: 0.005,
+    proteinPer: 0.0054,
     fiberPer: 0.014,
     carbsPer: 0.131,
-    fatsPer: 0.001,
+    fatsPer: 0.0012,
     category: "fruit",
+    source: "USDA FDC #169124 (pineapple, raw)",
   },
 
   // Protein
@@ -363,8 +391,9 @@ export const FOOD_PRESETS: FoodPreset[] = [
     proteinPer: 0.31,
     fiberPer: 0,
     carbsPer: 0,
-    fatsPer: 0.036,
+    fatsPer: 0.0357,
     category: "protein",
+    source: "USDA FDC #171477 (chicken breast, roasted)",
   },
   {
     id: "fish-salmon",
@@ -373,11 +402,12 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 2.06,
-    proteinPer: 0.22,
+    proteinPer: 0.2235,
     fiberPer: 0,
     carbsPer: 0,
-    fatsPer: 0.13,
+    fatsPer: 0.1235,
     category: "protein",
+    source: "USDA FDC #175168 (Atlantic salmon, cooked, dry heat)",
   },
   {
     id: "paneer",
@@ -386,28 +416,30 @@ export const FOOD_PRESETS: FoodPreset[] = [
     unit: "g",
     defaultAmount: 50,
     caloriesPer: 2.96,
-    proteinPer: 0.25,
+    proteinPer: 0.2486,
     fiberPer: 0,
     carbsPer: 0.062,
     fatsPer: 0.207,
     category: "protein",
+    source: "IFCT 2017 (paneer, full-fat cow milk)",
   },
   {
     id: "greek-yogurt",
-    name: "Greek yogurt",
+    name: "Greek yogurt (non-fat)",
     emoji: "🥣",
     unit: "g",
     defaultAmount: 150,
     caloriesPer: 0.59,
-    proteinPer: 0.1,
+    proteinPer: 0.1019,
     fiberPer: 0,
-    carbsPer: 0.036,
-    fatsPer: 0.004,
+    carbsPer: 0.0364,
+    fatsPer: 0.0039,
     category: "protein",
+    source: "USDA FDC #173304 (Greek yogurt, plain, non-fat)",
   },
   {
     id: "milk",
-    name: "Milk (whole)",
+    name: "Milk (full cream)",
     emoji: "🥛",
     unit: "ml",
     defaultAmount: 200,
@@ -415,8 +447,9 @@ export const FOOD_PRESETS: FoodPreset[] = [
     proteinPer: 0.032,
     fiberPer: 0,
     carbsPer: 0.048,
-    fatsPer: 0.033,
+    fatsPer: 0.0333,
     category: "protein",
+    source: "USDA FDC #171265 (whole milk, 3.25 % fat) · ~1.03 g/ml",
   },
   {
     id: "whey",
@@ -430,73 +463,80 @@ export const FOOD_PRESETS: FoodPreset[] = [
     carbsPer: 3,
     fatsPer: 1.5,
     category: "protein",
+    source: "Generic isolate/concentrate label (~30 g scoop)",
   },
   {
     id: "tofu",
-    name: "Tofu",
+    name: "Tofu (firm)",
     emoji: "🧈",
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.76,
-    proteinPer: 0.08,
+    proteinPer: 0.0808,
     fiberPer: 0.009,
-    carbsPer: 0.019,
-    fatsPer: 0.048,
+    carbsPer: 0.0188,
+    fatsPer: 0.0478,
     category: "protein",
+    source: "USDA FDC #172476 (tofu, firm, prepared with calcium sulfate)",
   },
 
   // Carbs
   {
     id: "rice-cooked",
-    name: "Rice (cooked)",
+    name: "Rice (cooked, white)",
     emoji: "🍚",
     unit: "g",
     defaultAmount: 150,
     caloriesPer: 1.3,
-    proteinPer: 0.027,
+    proteinPer: 0.0269,
     fiberPer: 0.004,
-    carbsPer: 0.28,
-    fatsPer: 0.003,
+    carbsPer: 0.2817,
+    fatsPer: 0.0028,
     category: "carb",
+    source: "USDA FDC #169757 (rice, white, long-grain, cooked)",
   },
   {
     id: "oats-dry",
-    name: "Oats (dry)",
+    name: "Oats (dry, rolled)",
     emoji: "🥣",
     unit: "g",
     defaultAmount: 40,
-    caloriesPer: 3.89,
-    proteinPer: 0.169,
-    fiberPer: 0.106,
-    carbsPer: 0.663,
-    fatsPer: 0.069,
+    caloriesPer: 3.79,
+    proteinPer: 0.1369,
+    fiberPer: 0.101,
+    carbsPer: 0.6759,
+    fatsPer: 0.0689,
     category: "carb",
+    source: "USDA FDC #173904 (oats, raw)",
   },
   {
     id: "roti",
-    name: "Roti / chapati",
+    name: "Roti / chapati (~40 g)",
     emoji: "🫓",
     unit: "piece",
     defaultAmount: 1,
-    caloriesPer: 100,
+    caloriesPer: 120,
     proteinPer: 3.5,
-    fiberPer: 2,
+    fiberPer: 2.0,
     carbsPer: 18,
-    fatsPer: 2.5,
+    fatsPer: 3.0,
     category: "carb",
+    source:
+      "IFCT 2017 + typical home recipe (whole wheat flour ~40 g + a tsp oil)",
   },
   {
     id: "bread",
-    name: "Bread slice",
+    name: "Bread slice (whole wheat)",
     emoji: "🍞",
     unit: "piece",
     defaultAmount: 1,
-    caloriesPer: 70,
-    proteinPer: 3,
-    fiberPer: 1.2,
-    carbsPer: 13,
-    fatsPer: 1,
+    caloriesPer: 81,
+    proteinPer: 4,
+    fiberPer: 2,
+    carbsPer: 13.8,
+    fatsPer: 1.1,
     category: "carb",
+    source: "USDA FDC #172684 (whole-wheat bread, commercial, ~30 g slice)",
   },
 
   // Drinks (no category target — these live under My foods via search)

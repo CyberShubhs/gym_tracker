@@ -111,6 +111,7 @@ export type CustomFood = {
   carbsPer?: number;
   fatsPer?: number;
   category?: FoodCategoryRef;
+  source?: string;
 };
 
 export type Sex = "male" | "female";

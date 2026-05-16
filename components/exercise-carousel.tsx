@@ -19,10 +19,11 @@ type Props = {
   unit: Unit;
 };
 
-// Movement thresholds — tuned for a "feels native" swipe.
 const AXIS_LOCK_THRESHOLD = 10; // px before deciding horizontal vs vertical
-const SWIPE_DISTANCE = 40; // px to register a swipe by distance
+const SWIPE_DISTANCE = 40; // user-specified threshold
 const VELOCITY_THRESHOLD = 0.35; // px/ms
+const MAX_ROTATION = 90; // full quarter-turn at edge
+const ANIMATION_MS = 350;
 
 function vibrate(ms: number) {
   if (typeof navigator === "undefined") return;
@@ -40,12 +41,27 @@ function isInteractive(target: EventTarget | null): boolean {
   );
 }
 
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
+}
+
 export function ExerciseCarousel({ exercises, date, unit }: Props) {
   const count = exercises.length;
   const [rawIndex, setIndex] = useState(0);
   const index = count > 0 ? ((rawIndex % count) + count) % count : 0;
+  const reducedMotion = useReducedMotion();
 
-  const [dragX, setDragX] = useState(0);
+  // Drag progress (-1 .. +1). Positive = dragging right (previous).
+  const [progress, setProgress] = useState(0);
   const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pointerState = useRef<{
@@ -65,26 +81,35 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
 
   const goNext = useCallback(() => {
     setIndex((i) => wrap(i + 1));
-    setDragX(0);
+    setProgress(0);
     vibrate(15);
   }, [wrap]);
   const goPrev = useCallback(() => {
     setIndex((i) => wrap(i - 1));
-    setDragX(0);
+    setProgress(0);
     vibrate(15);
   }, [wrap]);
   const goTo = useCallback(
     (n: number) => {
       setIndex(wrap(n));
-      setDragX(0);
+      setProgress(0);
     },
     [wrap]
   );
 
+  const [trackWidth, setTrackWidth] = useState(0);
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    const ro = new ResizeObserver(() => {
+      setTrackWidth(el.clientWidth);
+    });
+    ro.observe(el);
+    setTrackWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Track every pointer-down — but remember whether it started on an
-    // interactive element. We do NOT bail out early: we still want to
-    // recognise a horizontal swipe that happens to begin on the card body.
     pointerState.current = {
       id: e.pointerId,
       startX: e.clientX,
@@ -94,7 +119,7 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
       locked: null,
       captured: false,
     };
-    setDragging(false); // not yet — only after axis lock to horizontal
+    setDragging(false);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -106,8 +131,6 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
       if (absX < AXIS_LOCK_THRESHOLD && absY < AXIS_LOCK_THRESHOLD) return;
-      // Clear horizontal intent — but only if started outside an interactive
-      // control. Otherwise we keep the native input/button behaviour.
       if (absX > absY * 1.2 && !ps.startedOnInteractive) {
         ps.locked = "h";
         setDragging(true);
@@ -118,17 +141,18 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
           // ignore
         }
       } else {
-        // Vertical scroll or tap on an input — leave alone.
         pointerState.current = null;
         setDragging(false);
-        setDragX(0);
+        setProgress(0);
         return;
       }
     }
     if (ps.locked === "h") {
-      // Now we own the gesture — block scroll & default behaviour.
       e.preventDefault();
-      setDragX(dx);
+      // Normalise drag to [-1, +1] across the carousel width.
+      const w = trackWidth || 1;
+      const p = Math.max(-1, Math.min(1, dx / w));
+      setProgress(p);
     }
   };
 
@@ -156,12 +180,12 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
     pointerState.current = null;
     setDragging(false);
     if (!ps) {
-      setDragX(0);
+      setProgress(0);
       return;
     }
     releaseCapture(e, ps);
     if (ps.locked !== "h") {
-      setDragX(0);
+      setProgress(0);
       return;
     }
     const dx = clientX - ps.startX;
@@ -174,7 +198,7 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
       if (dx < 0) goNext();
       else goPrev();
     } else {
-      setDragX(0);
+      setProgress(0);
     }
   };
 
@@ -183,7 +207,7 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
     if (!ps || ps.id !== e.pointerId) {
       pointerState.current = null;
       setDragging(false);
-      setDragX(0);
+      setProgress(0);
       return;
     }
     finishDrag(e, e.clientX, e.timeStamp);
@@ -194,7 +218,7 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
     if (ps) releaseCapture(e, ps);
     pointerState.current = null;
     setDragging(false);
-    setDragX(0);
+    setProgress(0);
   };
 
   // Keyboard navigation
@@ -227,17 +251,15 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
   const prevExercise = exercises[prevIdx];
   const nextExercise = exercises[nextIdx];
 
-  const [trackWidth, setTrackWidth] = useState(0);
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
-    const ro = new ResizeObserver(() => {
-      setTrackWidth(el.clientWidth);
-    });
-    ro.observe(el);
-    setTrackWidth(el.clientWidth);
-    return () => ro.disconnect();
-  }, []);
+  // Container rotation: drag-right (progress > 0) shows previous face.
+  // Cube rotates around Y-axis. Faces are placed at -trackWidth/2 in front
+  // and at the sides at ±90deg.
+  const angle = -progress * MAX_ROTATION; // negative for natural drag direction
+  const halfWidth = trackWidth / 2;
+
+  const transition = dragging
+    ? "transform 0s"
+    : `transform ${ANIMATION_MS}ms cubic-bezier(0.22, 0.61, 0.36, 1)`;
 
   return (
     <div className="space-y-3">
@@ -253,59 +275,41 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
         <CarouselDots count={count} active={index} onPick={goTo} />
       </div>
 
-      {/* Swipe track */}
+      {/* 3D cube track. Reduced-motion users get a plain slide. */}
       <div
         ref={containerRef}
-        className="relative overflow-hidden select-none"
-        style={{ touchAction: "pan-y" }}
+        className="relative select-none"
+        style={{
+          touchAction: "pan-y",
+          perspective: reducedMotion ? undefined : "1200px",
+          height: reducedMotion ? "auto" : undefined,
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
       >
-        <div
-          className={cn(
-            "flex w-full will-change-transform",
-            dragging
-              ? "transition-none"
-              : "transition-transform duration-300 ease-out"
-          )}
-          style={{
-            transform: `translate3d(${-trackWidth + dragX}px, 0, 0)`,
-            width: trackWidth ? trackWidth * 3 : undefined,
-          }}
-        >
-          <Slide width={trackWidth} aria-hidden="true">
-            {prevExercise && (
-              <ExerciseCard
-                key={`prev-${prevExercise.id}`}
-                exercise={prevExercise}
-                date={date}
-                unit={unit}
-              />
-            )}
-          </Slide>
-          <Slide width={trackWidth}>
-            {current && (
-              <ExerciseCard
-                key={`cur-${current.id}`}
-                exercise={current}
-                date={date}
-                unit={unit}
-              />
-            )}
-          </Slide>
-          <Slide width={trackWidth} aria-hidden="true">
-            {nextExercise && (
-              <ExerciseCard
-                key={`next-${nextExercise.id}`}
-                exercise={nextExercise}
-                date={date}
-                unit={unit}
-              />
-            )}
-          </Slide>
-        </div>
+        {reducedMotion ? (
+          <PlainSlide
+            current={current}
+            date={date}
+            unit={unit}
+            offset={progress * (trackWidth || 0)}
+            transition={transition}
+          />
+        ) : (
+          <CubeStage
+            width={trackWidth}
+            angle={angle}
+            transition={transition}
+            front={current}
+            left={prevExercise}
+            right={nextExercise}
+            date={date}
+            unit={unit}
+            halfWidth={halfWidth}
+          />
+        )}
       </div>
 
       {/* Prev / Next */}
@@ -349,21 +353,158 @@ export function ExerciseCarousel({ exercises, date, unit }: Props) {
   );
 }
 
-function Slide({
-  children,
+function CubeStage({
   width,
-  ...rest
+  angle,
+  transition,
+  front,
+  left,
+  right,
+  date,
+  unit,
+  halfWidth,
 }: {
-  children: React.ReactNode;
   width: number;
-} & React.HTMLAttributes<HTMLDivElement>) {
+  angle: number;
+  transition: string;
+  front: TemplateExercise | undefined;
+  left: TemplateExercise | undefined;
+  right: TemplateExercise | undefined;
+  date: string;
+  unit: Unit;
+  halfWidth: number;
+}) {
+  // Measure intrinsic height of the front face so the stage matches it.
+  const frontRef = useRef<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState<number>(0);
+  useEffect(() => {
+    const el = frontRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    ro.observe(el);
+    setHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [front?.id]);
+
   return (
     <div
-      className="shrink-0 px-0.5"
-      style={{ width: width || "100%" }}
+      className="relative w-full"
+      style={{
+        height: height ? `${height}px` : undefined,
+        minHeight: "12rem",
+      }}
+    >
+      <div
+        className="absolute inset-0"
+        style={{
+          transformStyle: "preserve-3d",
+          transform: `translate3d(0,0,${-halfWidth}px) rotateY(${angle}deg)`,
+          transition,
+          willChange: "transform",
+        }}
+      >
+        <CubeFace
+          rotation={0}
+          width={width}
+          halfWidth={halfWidth}
+          ref={frontRef}
+        >
+          {front && (
+            <ExerciseCard
+              key={`front-${front.id}`}
+              exercise={front}
+              date={date}
+              unit={unit}
+            />
+          )}
+        </CubeFace>
+        <CubeFace rotation={90} width={width} halfWidth={halfWidth} aria-hidden>
+          {right && (
+            <ExerciseCard
+              key={`right-${right.id}`}
+              exercise={right}
+              date={date}
+              unit={unit}
+            />
+          )}
+        </CubeFace>
+        <CubeFace rotation={-90} width={width} halfWidth={halfWidth} aria-hidden>
+          {left && (
+            <ExerciseCard
+              key={`left-${left.id}`}
+              exercise={left}
+              date={date}
+              unit={unit}
+            />
+          )}
+        </CubeFace>
+      </div>
+    </div>
+  );
+}
+
+type CubeFaceProps = {
+  rotation: number;
+  width: number;
+  halfWidth: number;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLDivElement>;
+
+const CubeFace = ({
+  rotation,
+  width,
+  halfWidth,
+  children,
+  ref,
+  ...rest
+}: CubeFaceProps & { ref?: React.Ref<HTMLDivElement> }) => {
+  return (
+    <div
+      ref={ref}
+      className="absolute inset-0"
+      style={{
+        width: width || "100%",
+        backfaceVisibility: "hidden",
+        transform: `rotateY(${rotation}deg) translate3d(0,0,${halfWidth}px)`,
+      }}
       {...rest}
     >
       {children}
+    </div>
+  );
+};
+
+function PlainSlide({
+  current,
+  date,
+  unit,
+  offset,
+  transition,
+}: {
+  current: TemplateExercise | undefined;
+  date: string;
+  unit: Unit;
+  offset: number;
+  transition: string;
+}) {
+  return (
+    <div className="overflow-hidden">
+      <div
+        style={{
+          transform: `translate3d(${offset}px, 0, 0)`,
+          transition,
+          willChange: "transform",
+        }}
+      >
+        {current && (
+          <ExerciseCard
+            key={current.id}
+            exercise={current}
+            date={date}
+            unit={unit}
+          />
+        )}
+      </div>
     </div>
   );
 }
