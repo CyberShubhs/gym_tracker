@@ -3,12 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { Dumbbell, History, Settings } from "lucide-react";
+import {
+  Dumbbell,
+  Home,
+  Settings,
+  UtensilsCrossed,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "Today", icon: Dumbbell },
-  { href: "/history", label: "History", icon: History },
+  { href: "/", label: "Home", icon: Home },
+  { href: "/workout", label: "Workout", icon: Dumbbell },
+  { href: "/food", label: "Food", icon: UtensilsCrossed },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

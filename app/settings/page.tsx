@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, ChevronDown, History, Plus, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -319,6 +320,27 @@ export default function SettingsPage() {
         description="Push notifications that don't coddle you. Save the app to your home screen first."
       >
         <HardcoreToggle />
+      </SettingsSection>
+
+      <SettingsSection
+        title="History / Logbook"
+        description="Browse workout, food, and weight logs."
+        summary={`${
+          Object.keys(state.workoutLogs).length
+        } workout · ${
+          Object.keys(state.foodLogs).length
+        } food · ${Object.keys(state.weightLogs).length} weight`}
+      >
+        <Link
+          href="/history"
+          className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/40 px-3 py-3 transition-colors hover:border-foreground/40 hover:bg-muted/30"
+        >
+          <span className="flex items-center gap-2">
+            <History className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Open logbook</span>
+          </span>
+          <ArrowRight className="h-4 w-4 text-muted-foreground" />
+        </Link>
       </SettingsSection>
 
       <SettingsSection

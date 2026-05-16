@@ -186,7 +186,7 @@ export function ExerciseCard({
     : null;
 
   return (
-    <Card className="border-border/70" data-no-swipe>
+    <Card className="border-border/70">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-start justify-between gap-3 text-base">
           <span className="flex min-w-0 flex-1 flex-col gap-2">
@@ -223,7 +223,7 @@ export function ExerciseCard({
           </span>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <PRBadges flags={flags} />
-            <div className="flex items-center gap-1" data-no-swipe>
+            <div className="flex items-center gap-1">
               <PrLadder
                 exerciseId={exercise.id}
                 beforeDate={date}

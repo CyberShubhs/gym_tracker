@@ -13,7 +13,15 @@ import {
 } from "@/components/ui/tabs";
 import { CATEGORY_ACCENT, CATEGORY_LABEL } from "@/lib/defaults";
 import { cn, formatDate } from "@/lib/utils";
-import { ArrowUpRight, Beef, Droplet, Flame, Scale } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  Beef,
+  Droplet,
+  Flame,
+  Scale,
+} from "lucide-react";
+import Link from "next/link";
 import { WeightChart } from "@/components/weight-chart";
 import { LEGACY_EXERCISE_NAMES } from "@/lib/exercise-aliases";
 import { getExerciseTutorialUrl } from "@/lib/tutorial";
@@ -80,13 +88,22 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-5">
-      <header>
-        <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Log
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          History
-        </h1>
+      <header className="space-y-2">
+        <Link
+          href="/settings"
+          className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Settings
+        </Link>
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Log
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            History
+          </h1>
+        </div>
       </header>
 
       <Tabs defaultValue="workout">
