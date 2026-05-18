@@ -31,11 +31,38 @@ import {
   needsTemplateMigration,
   validateTemplates,
 } from "./defaults";
-import { loadState, saveState } from "./actions";
+import { loadState, resetCurrentProfile, saveState } from "./actions";
 import { plannedTemplate } from "./cycle";
 import { exerciseIdGroup } from "./exercise-aliases";
 
-const CACHE_KEY = "gym-tracker:cache:v3";
+const CACHE_KEY = "gym-tracker:cache:v4";
+const ACTIVE_UID_COOKIE = "gt-uid";
+
+// Cache is wrapped in an envelope tagged with the user id so a previous
+// profile's data never leaks into a new profile during the brief window
+// between cache hydration and the server response. The actual app state is
+// nested under `state`.
+type CacheEnvelope = {
+  uid: string;
+  state: AppState;
+};
+
+function getActiveUidFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const raw = document.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(/;\s*/)) {
+    if (part.startsWith(`${ACTIVE_UID_COOKIE}=`)) {
+      const value = part.slice(ACTIVE_UID_COOKIE.length + 1);
+      try {
+        return decodeURIComponent(value) || null;
+      } catch {
+        return value || null;
+      }
+    }
+  }
+  return null;
+}
 
 // Migrates user settings to the new upper-body plan whenever the templates
 // version is stale OR the saved templates don't pass validation (e.g. an
@@ -197,25 +224,47 @@ function ensureFoodLog(prev: AppState, date: string): FoodLog {
   );
 }
 
-function readCache(): AppState | null {
+function readCache(): { uid: string; state: AppState } | null {
   if (typeof window === "undefined") return null;
+  const currentUid = getActiveUidFromCookie();
+  if (!currentUid) {
+    // No active session — never use cached data.
+    return null;
+  }
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as AppState;
+    const env = JSON.parse(raw) as CacheEnvelope;
+    if (!env || env.uid !== currentUid || !env.state) {
+      // Cache belongs to a different profile — ignore it.
+      return null;
+    }
+    return { uid: env.uid, state: env.state };
   } catch {
     return null;
   }
 }
 
-function writeCache(state: AppState) {
+function writeCache(state: AppState, uid: string | null) {
   if (typeof window === "undefined") return;
+  if (!uid) {
+    // Without a known active profile we must not persist anything that
+    // could later be misread as belonging to a different account.
+    try {
+      window.localStorage.removeItem(CACHE_KEY);
+    } catch {
+      // ignore
+    }
+    return;
+  }
   try {
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify(state));
+    const envelope: CacheEnvelope = { uid, state };
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(envelope));
   } catch {
     // ignore quota errors
   }
 }
+
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
@@ -224,30 +273,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<string>("");
   const dirtyRef = useRef(false);
+  // Active user id from the server — populated by loadState(). Used to
+  // namespace every cache write so a previous profile cannot leak into a
+  // freshly-created or freshly-switched profile.
+  const activeUidRef = useRef<string | null>(null);
 
-  // Hydrate: cache first (instant), then server (authoritative).
-  // serverLoaded must be true before we ever auto-save; otherwise a transient
-  // load failure could let an empty client state overwrite real DB state.
+  // Hydrate: cache first (instant) IF it matches the active profile, then
+  // server (authoritative). serverLoaded must be true before we ever
+  // auto-save; otherwise a transient load failure could let an empty client
+  // state overwrite real DB state.
   const serverLoadedRef = useRef(false);
   useEffect(() => {
     const cached = readCache();
     if (cached) {
+      activeUidRef.current = cached.uid;
       setState({
-        settings: migrateSettings({ ...DEFAULT_SETTINGS, ...cached.settings }),
-        workoutLogs: cached.workoutLogs ?? {},
-        foodLogs: cached.foodLogs ?? {},
-        weightLogs: cached.weightLogs ?? {},
+        settings: migrateSettings({
+          ...DEFAULT_SETTINGS,
+          ...cached.state.settings,
+        }),
+        workoutLogs: cached.state.workoutLogs ?? {},
+        foodLogs: cached.state.foodLogs ?? {},
+        weightLogs: cached.state.weightLogs ?? {},
       });
+    } else {
+      // No cache for this user — start from defaults so a new profile
+      // never inherits the previous user's data while we wait for the
+      // server response.
+      setState(INITIAL_STATE);
+      activeUidRef.current = null;
     }
     loadState()
-      .then((server) => {
+      .then(({ userId, state: server }) => {
         const migrated: AppState = {
           ...server,
           settings: migrateSettings(server.settings),
         };
+        activeUidRef.current = userId;
         setState(migrated);
         lastSavedRef.current = JSON.stringify(migrated);
-        writeCache(migrated);
+        writeCache(migrated, userId);
         serverLoadedRef.current = true;
         setHydrated(true);
       })
@@ -264,7 +329,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     if (!serverLoadedRef.current) return;
     const serialized = JSON.stringify(state);
-    writeCache(state);
+    writeCache(state, activeUidRef.current);
     if (serialized === lastSavedRef.current) return;
     dirtyRef.current = true;
     setSaveStatus("saving");
@@ -639,7 +704,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const resetAll = useCallback(() => {
+    // Profile-scoped reset. Wipes the active profile's row server-side,
+    // resets the client state to defaults, and refreshes the cache so the
+    // next hydration starts blank. Other profiles' rows are untouched
+    // because resetCurrentProfile filters by the session user id.
+    const uid = activeUidRef.current;
     setState(INITIAL_STATE);
+    lastSavedRef.current = JSON.stringify(INITIAL_STATE);
+    writeCache(INITIAL_STATE, uid);
+    setSaveStatus("saving");
+    void resetCurrentProfile()
+      .then((r) => setSaveStatus(r.ok ? "saved" : "error"))
+      .catch(() => setSaveStatus("error"));
   }, []);
 
   const lastSessionFor = useCallback(

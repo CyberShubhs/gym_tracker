@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, ChevronDown, History, Plus, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { logout } from "@/lib/actions";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -353,33 +355,86 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
+        title="Profile"
+        description="Switch to another profile or sign out of this one."
+        summary="Active profile only"
+      >
+        <SwitchProfileBlock />
+      </SettingsSection>
+
+      <SettingsSection
         title="Danger zone"
-        description="Wipe all logs and restore defaults."
+        description="Reset this profile only — other profiles are unaffected."
         tone="danger"
       >
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2.5 py-2 text-xs text-amber-200/90">
+          Reset only affects the active profile. Other profiles, their logs,
+          and their settings stay safe. Default workout templates remain
+          available.
+        </p>
         <AlertDialog>
           <AlertDialogTrigger
             render={
               <Button variant="destructive" size="sm">
-                Reset everything
+                Reset this profile only
               </Button>
             }
           />
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Reset all data?</AlertDialogTitle>
+              <AlertDialogTitle>Reset this profile only?</AlertDialogTitle>
               <AlertDialogDescription>
-                This deletes your workouts, food, weight history, and restores
-                defaults. Cannot be undone.
+                Deletes the workouts, food, weight history, notes, recipes,
+                goals, and settings for THIS profile only. Other profiles
+                will not be touched. Default workout templates remain
+                available. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={resetAll}>Reset</AlertDialogAction>
+              <AlertDialogAction onClick={resetAll}>
+                Reset this profile
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
       </SettingsSection>
+    </div>
+  );
+}
+
+function SwitchProfileBlock() {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const handleSwitch = async () => {
+    setPending(true);
+    try {
+      await logout();
+    } finally {
+      // Force a full reload so the StoreProvider remounts and hydrates
+      // from a clean slate for the next profile. Avoids any in-memory
+      // leak from the previously active profile.
+      if (typeof window !== "undefined") {
+        window.location.href = "/select";
+      } else {
+        router.replace("/select");
+      }
+    }
+  };
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Each profile has its own logs, weight, goals, foods, and history.
+        Switching does not copy or merge data between profiles.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleSwitch}
+        disabled={pending}
+      >
+        Switch profile / sign out
+      </Button>
     </div>
   );
 }

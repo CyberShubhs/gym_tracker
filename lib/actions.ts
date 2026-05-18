@@ -98,6 +98,24 @@ export async function listUsers(): Promise<UserCard[]> {
   }));
 }
 
+// Non-httpOnly companion to SESSION_COOKIE so the client can namespace its
+// localStorage cache by the active profile. Holds only the public user_id —
+// authentication still lives in the signed httpOnly session cookie.
+const ACTIVE_UID_COOKIE = "gt-uid";
+
+function setActiveUidCookie(
+  jar: Awaited<ReturnType<typeof cookies>>,
+  userId: string
+) {
+  jar.set(ACTIVE_UID_COOKIE, userId, {
+    httpOnly: false,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+}
+
 export async function loginUser(
   userId: string,
   passcode: string
@@ -119,6 +137,7 @@ export async function loginUser(
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
+  setActiveUidCookie(jar, userId);
   return { ok: true };
 }
 
@@ -164,12 +183,28 @@ export async function createUser(
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   });
+  setActiveUidCookie(jar, attemptId);
   return { ok: true, userId: attemptId };
 }
 
 export async function logout(): Promise<{ ok: true }> {
   const jar = await cookies();
   jar.delete(SESSION_COOKIE);
+  jar.delete(ACTIVE_UID_COOKIE);
+  return { ok: true };
+}
+
+// Reset the active profile's data on the server. Other profiles are not
+// touched; default templates remain available via the client-side
+// `migrateSettings` / DEFAULT_TEMPLATES.
+export async function resetCurrentProfile(): Promise<{ ok: boolean }> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false };
+  await migrate();
+  const sql = getSql();
+  await sql`
+    DELETE FROM user_state WHERE user_id = ${userId}
+  `;
   return { ok: true };
 }
 
@@ -179,16 +214,31 @@ async function currentUserId(): Promise<string | null> {
   return verifySession(cookie);
 }
 
-export async function loadState(): Promise<AppState> {
+export type LoadedState = {
+  userId: string | null;
+  state: AppState;
+};
+
+function emptyAppState(): AppState {
+  return {
+    settings: DEFAULT_SETTINGS,
+    workoutLogs: {},
+    foodLogs: {},
+    weightLogs: {},
+  };
+}
+
+export async function loadState(): Promise<LoadedState> {
   await migrate();
   const userId = await currentUserId();
   if (!userId) {
-    return {
-      settings: DEFAULT_SETTINGS,
-      workoutLogs: {},
-      foodLogs: {},
-      weightLogs: {},
-    };
+    return { userId: null, state: emptyAppState() };
+  }
+  // Re-set the public uid cookie defensively in case it was cleared
+  // (e.g. user cleared site data) so the client cache stays namespaced.
+  const jar = await cookies();
+  if (!jar.get(ACTIVE_UID_COOKIE)?.value) {
+    setActiveUidCookie(jar, userId);
   }
   const sql = getSql();
   const rows = (await sql`
@@ -196,19 +246,17 @@ export async function loadState(): Promise<AppState> {
   `) as Array<{ data: unknown }>;
 
   if (rows.length === 0) {
-    return {
-      settings: DEFAULT_SETTINGS,
-      workoutLogs: {},
-      foodLogs: {},
-      weightLogs: {},
-    };
+    return { userId, state: emptyAppState() };
   }
   const data = rows[0].data as Partial<AppState>;
   return {
-    settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
-    workoutLogs: data.workoutLogs ?? {},
-    foodLogs: data.foodLogs ?? {},
-    weightLogs: data.weightLogs ?? {},
+    userId,
+    state: {
+      settings: { ...DEFAULT_SETTINGS, ...(data.settings ?? {}) },
+      workoutLogs: data.workoutLogs ?? {},
+      foodLogs: data.foodLogs ?? {},
+      weightLogs: data.weightLogs ?? {},
+    },
   };
 }
 
