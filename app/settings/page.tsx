@@ -23,7 +23,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { DAY_NAMES } from "@/lib/defaults";
-import type { Sex, TemplateExercise, Unit, WorkoutTemplate } from "@/lib/types";
+import type {
+  Equipment,
+  Sex,
+  TemplateExercise,
+  Unit,
+  WorkoutTemplate,
+} from "@/lib/types";
 import { cn, todayISO } from "@/lib/utils";
 import { DataIO } from "@/components/data-io";
 import { HardcoreToggle } from "@/components/hardcore-toggle";
@@ -41,6 +47,8 @@ export default function SettingsPage() {
     updateSettings,
     upsertTemplate,
     removeTemplate,
+    upsertLegTemplate,
+    removeLegTemplate,
     resetAll,
   } = useStore();
 
@@ -300,8 +308,8 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Workout templates"
-        description="Edit names, exercises, target sets and rep ranges."
+        title="Upper body templates"
+        description="Edit names, exercises, target sets and rep ranges for upper-body days."
         summary={`${state.settings.templates.length} templates`}
       >
         <div className="space-y-3">
@@ -313,7 +321,36 @@ export default function SettingsPage() {
               onRemove={() => removeTemplate(t.id)}
             />
           ))}
-          <AddTemplate onAdd={upsertTemplate} />
+          <AddTemplate onAdd={upsertTemplate} idPrefix="upper" />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Leg templates"
+        description="Standalone leg-day templates. Independent from upper-body templates."
+        summary={`${(state.settings.legTemplates ?? []).length} templates`}
+      >
+        <div className="space-y-3">
+          {(state.settings.legTemplates ?? []).length === 0 && (
+            <p className="rounded-md border border-dashed border-border/60 bg-card/40 px-3 py-4 text-center text-xs text-muted-foreground">
+              No leg templates yet. Create one to start logging leg
+              workouts. They will not appear in the upper-body list.
+            </p>
+          )}
+          {(state.settings.legTemplates ?? []).map((t) => (
+            <TemplateEditor
+              key={t.id}
+              template={t}
+              onChange={upsertLegTemplate}
+              onRemove={() => removeLegTemplate(t.id)}
+            />
+          ))}
+          <AddTemplate
+            onAdd={upsertLegTemplate}
+            idPrefix="leg"
+            categoryOverride="legs"
+            placeholder="New leg template name"
+          />
         </div>
       </SettingsSection>
 
@@ -641,6 +678,12 @@ function TemplateEditor({
                     onChange={(v) => updateExercise(i, { repsHigh: v })}
                   />
                 </div>
+                <EquipmentPicker
+                  value={ex.equipment}
+                  onChange={(eq) =>
+                    updateExercise(i, { equipment: eq })
+                  }
+                />
               </div>
             ))}
             <Button
@@ -691,6 +734,59 @@ function TemplateEditor({
   );
 }
 
+const EQUIPMENT_OPTIONS: { value: Equipment; label: string }[] = [
+  { value: "machine", label: "Machine" },
+  { value: "barbell", label: "Barbell" },
+  { value: "dumbbell", label: "Dumbbell" },
+  { value: "cable", label: "Cable" },
+  { value: "bodyweight", label: "Bodyweight" },
+  { value: "physio", label: "Physio" },
+  { value: "cardio", label: "Cardio" },
+];
+
+function EquipmentPicker({
+  value,
+  onChange,
+}: {
+  value: Equipment | undefined;
+  onChange: (v: Equipment | undefined) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">Equipment / type</Label>
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => onChange(undefined)}
+          className={cn(
+            "rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+            value === undefined
+              ? "border-foreground bg-foreground/10 text-foreground"
+              : "border-border/60 text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Auto
+        </button>
+        {EQUIPMENT_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "rounded-md border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider transition-colors",
+              value === o.value
+                ? "border-foreground bg-foreground/10 text-foreground"
+                : "border-border/60 text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function NumField({
   label,
   value,
@@ -719,19 +815,25 @@ function NumField({
 
 function AddTemplate({
   onAdd,
+  idPrefix = "tpl",
+  categoryOverride,
+  placeholder = "New template name",
 }: {
   onAdd: (t: WorkoutTemplate) => void;
+  idPrefix?: string;
+  categoryOverride?: WorkoutTemplate["category"];
+  placeholder?: string;
 }) {
   const [name, setName] = useState("");
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    const id =
-      trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now();
+    const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const id = `${idPrefix}-${slug}-${Date.now().toString(36)}`;
     onAdd({
       id,
       name: trimmed,
-      category: "push",
+      category: categoryOverride ?? "push",
       exercises: [],
     });
     setName("");
@@ -739,7 +841,7 @@ function AddTemplate({
   return (
     <div className="flex gap-2">
       <Input
-        placeholder="New template name"
+        placeholder={placeholder}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {

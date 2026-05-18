@@ -236,6 +236,8 @@ export const DEFAULT_SETTINGS: Settings = {
   targets: DEFAULT_TARGETS,
   schedule: DEFAULT_SCHEDULE,
   templates: DEFAULT_TEMPLATES,
+  // Empty by default — users build their own leg-day templates.
+  legTemplates: [],
   templatesVersion: TEMPLATES_VERSION,
   goalWeightKg: 85,
 };

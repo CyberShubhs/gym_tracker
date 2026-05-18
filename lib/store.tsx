@@ -138,6 +138,8 @@ type StoreContextValue = {
   updateSettings: (patch: Partial<Settings>) => void;
   upsertTemplate: (template: WorkoutTemplate) => void;
   removeTemplate: (id: string) => void;
+  upsertLegTemplate: (template: WorkoutTemplate) => void;
+  removeLegTemplate: (id: string) => void;
   upsertCustomFood: (food: CustomFood) => void;
   removeCustomFood: (id: string) => void;
   setFoodOverride: (presetId: string, override: FoodOverride | null) => void;
@@ -614,6 +616,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const upsertLegTemplate = useCallback((template: WorkoutTemplate) => {
+    setState((prev) => {
+      // Force the category so leg templates never accidentally appear under
+      // the upper-body section.
+      const next = { ...template, category: "legs" as const };
+      const list = prev.settings.legTemplates ?? [];
+      const idx = list.findIndex((t) => t.id === next.id);
+      const nextList = [...list];
+      if (idx >= 0) nextList[idx] = next;
+      else nextList.push(next);
+      return {
+        ...prev,
+        settings: { ...prev.settings, legTemplates: nextList },
+      };
+    });
+  }, []);
+
+  const removeLegTemplate = useCallback((id: string) => {
+    setState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        legTemplates: (prev.settings.legTemplates ?? []).filter(
+          (t) => t.id !== id
+        ),
+      },
+    }));
+  }, []);
+
   const upsertCustomFood = useCallback((food: CustomFood) => {
     setState((prev) => {
       const list = prev.settings.customFoods ?? [];
@@ -759,6 +790,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateSettings,
       upsertTemplate,
       removeTemplate,
+      upsertLegTemplate,
+      removeLegTemplate,
       upsertCustomFood,
       removeCustomFood,
       setFoodOverride,
@@ -788,6 +821,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateSettings,
       upsertTemplate,
       removeTemplate,
+      upsertLegTemplate,
+      removeLegTemplate,
       upsertCustomFood,
       removeCustomFood,
       setFoodOverride,

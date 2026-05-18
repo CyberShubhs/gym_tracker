@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, Dumbbell, Timer } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  Dumbbell,
+  Plus,
+  Settings as SettingsIcon,
+  Timer,
+} from "lucide-react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { todayISO, formatDate, cn } from "@/lib/utils";
 import { CATEGORY_ACCENT, CATEGORY_LABEL, DAY_NAMES } from "@/lib/defaults";
 import { ExerciseCarousel } from "@/components/exercise-carousel";
-import { LEGS_TEMPLATE } from "@/lib/legs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { RecoveryCard } from "@/components/recovery-card";
@@ -18,6 +24,7 @@ import { useRestTimer } from "@/components/rest-timer";
 import type { WorkoutTemplate } from "@/lib/types";
 
 type Mode = "upper" | "legs";
+const LEG_PICK_KEY = "gym-tracker:active-leg-template:v1";
 
 export default function WorkoutPage() {
   const { hydrated, state, updateSettings, ensureWorkoutLog, markRestComplete } =
@@ -47,11 +54,33 @@ export default function WorkoutPage() {
   const activeUpperId = isCommitted ? log!.templateId : scheduledTemplateId;
   const upperTemplate: WorkoutTemplate | undefined =
     state.settings.templates.find((t) => t.id === activeUpperId);
+  const legTemplates = state.settings.legTemplates ?? [];
 
   // Auto-switch to Legs when today's planned template *is* legs.
   useEffect(() => {
     if (upperTemplate?.category === "legs") setMode("legs");
   }, [upperTemplate?.category]);
+
+  // Persist the user's currently-picked leg template across refreshes.
+  const [activeLegId, setActiveLegId] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(LEG_PICK_KEY);
+    if (saved) setActiveLegId(saved);
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeLegId) window.localStorage.setItem(LEG_PICK_KEY, activeLegId);
+  }, [activeLegId]);
+  // Default to the first leg template if the saved one disappeared.
+  const legTemplate: WorkoutTemplate | undefined = useMemo(() => {
+    if (legTemplates.length === 0) return undefined;
+    if (activeLegId) {
+      const found = legTemplates.find((t) => t.id === activeLegId);
+      if (found) return found;
+    }
+    return legTemplates[0];
+  }, [legTemplates, activeLegId]);
 
   if (!hydrated) {
     return (
@@ -63,17 +92,22 @@ export default function WorkoutPage() {
     );
   }
 
-  const template = mode === "legs" ? LEGS_TEMPLATE : upperTemplate;
+  const template = mode === "legs" ? legTemplate : upperTemplate;
   const isOptionalDay = template?.optional ?? false;
   const isRestDay = template?.category === "rest";
   const declinedOptional =
     isOptionalDay && log?.didOptional === false && mode === "upper";
   const showWorkout = !isRestDay && !declinedOptional;
 
-  const pickTemplate = (id: string) => {
+  const pickUpperTemplate = (id: string) => {
     const shift = shiftCycleTo(date, id, state.settings);
     if (shift) updateSettings(shift);
     else ensureWorkoutLog(date, id);
+  };
+
+  const pickLegTemplate = (id: string) => {
+    setActiveLegId(id);
+    ensureWorkoutLog(date, id);
   };
 
   const completed = !!log?.completedRest;
@@ -121,16 +155,28 @@ export default function WorkoutPage() {
             active={mode === "legs"}
             onClick={() => setMode("legs")}
             label="Legs"
-            hint={LEGS_TEMPLATE.name}
+            hint={
+              legTemplates.length === 0
+                ? "No templates"
+                : legTemplate?.name ?? "Pick a template"
+            }
           />
         </div>
 
-        {/* Template chooser only in Upper mode */}
+        {/* Template chooser for the active mode. Upper and Leg lists are
+            completely separate — selecting one never touches the other. */}
         {mode === "upper" && (
           <TemplateSwitcher
             current={activeUpperId}
-            onSelect={pickTemplate}
+            onSelect={pickUpperTemplate}
             templates={state.settings.templates}
+          />
+        )}
+        {mode === "legs" && legTemplates.length > 0 && (
+          <TemplateSwitcher
+            current={legTemplate?.id ?? ""}
+            onSelect={pickLegTemplate}
+            templates={legTemplates}
           />
         )}
 
@@ -145,7 +191,11 @@ export default function WorkoutPage() {
         <RecoveryCard date={date} optional={isOptionalDay} />
       )}
 
-      {showWorkout && template && template.exercises.length > 0 ? (
+      {mode === "legs" && legTemplates.length === 0 ? (
+        <LegsEmptyState />
+      ) : mode === "legs" && legTemplate && legTemplate.exercises.length === 0 ? (
+        <LegsTemplateEmpty templateName={legTemplate.name} />
+      ) : showWorkout && template && template.exercises.length > 0 ? (
         <ExerciseCarousel
           exercises={template.exercises}
           date={date}
@@ -155,8 +205,12 @@ export default function WorkoutPage() {
         <RestState />
       ) : null}
 
-      {/* In-flow workout footer (not a fixed overlay) */}
-      {showWorkout && template && template.exercises.length > 0 && (
+      {/* In-flow workout footer (not a fixed overlay) — hidden when the
+          legs mode has nothing to log yet. */}
+      {showWorkout &&
+        template &&
+        template.exercises.length > 0 &&
+        !(mode === "legs" && legTemplates.length === 0) && (
         <div className="grid grid-cols-2 gap-2 pt-1">
           <Button
             variant="outline"
@@ -245,6 +299,53 @@ function TemplateSwitcher({
           {t.name}
         </Button>
       ))}
+    </div>
+  );
+}
+
+function LegsEmptyState() {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+      <Dumbbell className="mx-auto mb-2 h-6 w-6 text-emerald-400" />
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Legs
+      </p>
+      <p className="mt-2 text-lg font-medium">
+        No leg templates yet.
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Create one to start logging leg workouts. Leg templates are kept
+        separate from your upper-body templates.
+      </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-3 py-1.5 text-sm font-medium transition-colors hover:border-foreground"
+      >
+        <SettingsIcon className="h-3.5 w-3.5" />
+        Open Settings → Leg templates
+      </Link>
+    </div>
+  );
+}
+
+function LegsTemplateEmpty({ templateName }: { templateName: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+      <Plus className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        {templateName}
+      </p>
+      <p className="mt-2 text-lg font-medium">No exercises in this template.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Add exercises under Settings → Leg templates to start logging sets.
+      </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-3 py-1.5 text-sm font-medium transition-colors hover:border-foreground"
+      >
+        <SettingsIcon className="h-3.5 w-3.5" />
+        Edit in Settings
+      </Link>
     </div>
   );
 }

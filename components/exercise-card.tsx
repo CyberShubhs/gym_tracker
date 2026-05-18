@@ -35,6 +35,8 @@ const EQUIPMENT_LABEL: Record<Equipment, string> = {
   machine: "Machine",
   cable: "Cable",
   bodyweight: "Bodyweight",
+  physio: "Physio",
+  cardio: "Cardio",
 };
 
 const EQUIPMENT_TONE: Record<Equipment, string> = {
@@ -43,10 +45,16 @@ const EQUIPMENT_TONE: Record<Equipment, string> = {
   machine: "border-violet-500/40 bg-violet-500/10 text-violet-300",
   cable: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300",
   bodyweight: "border-zinc-500/40 bg-zinc-500/10 text-zinc-300",
+  physio: "border-teal-500/40 bg-teal-500/10 text-teal-300",
+  cardio: "border-rose-500/40 bg-rose-500/10 text-rose-300",
 };
 
 function inferEquipment(name: string): Equipment {
   const n = name.toLowerCase();
+  if (/treadmill|cycle|bike|run|jog|incline walk|stairmaster|rower/.test(n))
+    return "cardio";
+  if (/stretch|mobility|physio|band|foam roll|rehab|isometric hold/.test(n))
+    return "physio";
   if (/dumbbell|\bdb\b/.test(n)) return "dumbbell";
   if (/cable|rope|pulldown/.test(n)) return "cable";
   if (/machine|leg press|leg extension|leg curl|calf|preacher/.test(n))

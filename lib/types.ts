@@ -7,7 +7,9 @@ export type Equipment =
   | "dumbbell"
   | "machine"
   | "cable"
-  | "bodyweight";
+  | "bodyweight"
+  | "physio"
+  | "cardio";
 
 export type TemplateExercise = {
   id: string;
@@ -162,6 +164,12 @@ export type Settings = {
   targets: NutritionTargets;
   schedule: Record<number, string>;
   templates: WorkoutTemplate[];
+  // Leg-day templates live alongside (not inside) the upper-body templates
+  // array so editing or selecting one cannot affect the other. Optional on
+  // read for backwards-compatibility with profiles created before the
+  // leg-templates feature shipped; the store defaults missing values to
+  // an empty array so the user starts blank and builds their own.
+  legTemplates?: WorkoutTemplate[];
   // Bumped on every templates rewrite so existing user state migrates to
   // the new plan on next hydration without wiping logs.
   templatesVersion?: number;

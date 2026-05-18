@@ -75,7 +75,10 @@ export default function HistoryPage() {
   }
 
   const templateById = Object.fromEntries(
-    state.settings.templates.map((t) => [t.id, t])
+    [
+      ...state.settings.templates,
+      ...(state.settings.legTemplates ?? []),
+    ].map((t) => [t.id, t])
   );
   const exerciseNameById: Record<string, string> = {
     // Legacy ids that no longer appear in any current template — still
@@ -83,6 +86,9 @@ export default function HistoryPage() {
     ...LEGACY_EXERCISE_NAMES,
   };
   for (const t of state.settings.templates) {
+    for (const e of t.exercises) exerciseNameById[e.id] = e.name;
+  }
+  for (const t of state.settings.legTemplates ?? []) {
     for (const e of t.exercises) exerciseNameById[e.id] = e.name;
   }
 
