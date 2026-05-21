@@ -17,6 +17,9 @@ type Props = {
   exercises: TemplateExercise[];
   date: string;
   unit: Unit;
+  // Stable identifier (e.g. templateId) used to remember the user's
+  // currently-active exercise across navigation and refresh.
+  positionKey?: string;
 };
 
 const AXIS_LOCK_THRESHOLD = 10; // px before deciding horizontal vs vertical
@@ -54,11 +57,65 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
-export function ExerciseCarousel({ exercises, date, unit }: Props) {
+const POSITION_STORE_KEY = "gym-tracker:carousel-position:v1";
+
+type PositionMap = Record<string, { exerciseId: string; ts: number }>;
+
+function loadPositions(): PositionMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(POSITION_STORE_KEY);
+    if (!raw) return {};
+    return (JSON.parse(raw) as PositionMap) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function savePosition(key: string, exerciseId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const all = loadPositions();
+    all[key] = { exerciseId, ts: Date.now() };
+    window.localStorage.setItem(POSITION_STORE_KEY, JSON.stringify(all));
+  } catch {
+    // ignore
+  }
+}
+
+export function ExerciseCarousel({
+  exercises,
+  date,
+  unit,
+  positionKey,
+}: Props) {
   const count = exercises.length;
   const [rawIndex, setIndex] = useState(0);
   const index = count > 0 ? ((rawIndex % count) + count) % count : 0;
   const reducedMotion = useReducedMotion();
+
+  // Restore last position for this (date, template) combo. Falls back to 0
+  // when the stored exercise no longer exists in the template.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (!positionKey || count === 0) return;
+    const all = loadPositions();
+    const key = `${positionKey}::${date}`;
+    const stored = all[key]?.exerciseId;
+    if (!stored) return;
+    const idx = exercises.findIndex((e) => e.id === stored);
+    if (idx >= 0) setIndex(idx);
+  }, [positionKey, date, exercises, count]);
+
+  // Persist on every index change.
+  useEffect(() => {
+    if (!positionKey || count === 0) return;
+    const ex = exercises[index];
+    if (!ex) return;
+    savePosition(`${positionKey}::${date}`, ex.id);
+  }, [positionKey, date, exercises, index, count]);
 
   // Drag progress (-1 .. +1). Positive = dragging right (previous).
   const [progress, setProgress] = useState(0);

@@ -8,13 +8,15 @@ export function PrLadder({
   exerciseId,
   beforeDate,
   unit,
+  variant,
 }: {
   exerciseId: string;
   beforeDate: string;
   unit: string;
+  variant?: string;
 }) {
   const { state } = useStore();
-  const sessions = exerciseHistory(state, exerciseId).filter(
+  const sessions = exerciseHistory(state, exerciseId, variant).filter(
     (s) => s.date <= beforeDate
   );
   const last = sessions.slice(-5);

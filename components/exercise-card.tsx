@@ -27,7 +27,14 @@ import { PlateCalc } from "@/components/plate-calc";
 import { RestTimerControls } from "@/components/rest-timer";
 import { PrLadder } from "@/components/pr-ladder";
 import { ExercisePRDetail } from "@/components/exercise-pr-detail";
+import { TrainingGuide } from "@/components/training-guide";
+import { VariantPicker } from "@/components/variant-picker";
 import { progressionAdvice, sessionPRs, type PRFlags } from "@/lib/pr";
+import {
+  allVariantsFor,
+  normalizeVariantId,
+  variantLabelFor,
+} from "@/lib/variants";
 
 const EQUIPMENT_LABEL: Record<Equipment, string> = {
   barbell: "Barbell",
@@ -83,12 +90,18 @@ function entriesToDrafts(
   }));
 }
 
-function draftsToEntries(drafts: Draft[]): SetEntry[] {
+function draftsToEntries(drafts: Draft[], variant?: string): SetEntry[] {
+  const norm = normalizeVariantId(variant);
+  const tag = norm === "default" ? undefined : norm;
   return drafts
-    .map((d) => ({
-      weight: parseFloat(d.weight),
-      reps: parseInt(d.reps, 10),
-    }))
+    .map((d) => {
+      const e: SetEntry = {
+        weight: parseFloat(d.weight),
+        reps: parseInt(d.reps, 10),
+      };
+      if (tag) e.variant = tag;
+      return e;
+    })
     .filter(
       (e) =>
         Number.isFinite(e.weight) &&
@@ -107,11 +120,31 @@ export function ExerciseCard({
   date: string;
   unit: Unit;
 }) {
-  const { state, setSets, setExerciseNote, lastSessionFor } = useStore();
+  const {
+    state,
+    setSets,
+    setExerciseNote,
+    setActiveVariant,
+    addCustomVariant,
+    removeCustomVariant,
+    lastSessionFor,
+  } = useStore();
   const todayLog = state.workoutLogs[date];
   const todaySets = todayLog?.entries[exercise.id];
   const persistentNote = state.settings.exerciseNotes?.[exercise.id] ?? "";
   const displayNote = persistentNote || exercise.notes || "";
+
+  const customVariants = state.settings.customVariantsByExercise;
+  // Pick a variant: if today's sets are already tagged, follow them; else
+  // fall back to the user's last picked variant for this exercise.
+  const todayVariant = todaySets?.find((s) => !!s.variant)?.variant;
+  const storedActive = state.settings.activeVariantByExercise?.[exercise.id];
+  const activeVariant = normalizeVariantId(todayVariant ?? storedActive);
+  const variantOptions = allVariantsFor(exercise.id, customVariants);
+  const variantLabel = variantLabelFor(
+    activeVariant,
+    customVariants?.[exercise.id]
+  );
 
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     entriesToDrafts(todaySets, exercise.sets)
@@ -121,14 +154,14 @@ export function ExerciseCard({
     setDrafts(entriesToDrafts(todaySets, exercise.sets));
   }, [date, exercise.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const last = lastSessionFor(exercise.id, date);
-  const { flags } = sessionPRs(state, exercise.id, date);
+  const last = lastSessionFor(exercise.id, date, activeVariant);
+  const { flags } = sessionPRs(state, exercise.id, date, activeVariant);
   const advice = progressionAdvice(exercise, todaySets);
 
   const updateDraft = (idx: number, patch: Partial<Draft>) => {
     setDrafts((prev) => {
       const next = prev.map((d, i) => (i === idx ? { ...d, ...patch } : d));
-      setSets(date, exercise.id, draftsToEntries(next));
+      setSets(date, exercise.id, draftsToEntries(next, activeVariant));
       return next;
     });
   };
@@ -140,7 +173,7 @@ export function ExerciseCard({
         ? { weight: last.weight, reps: last.reps }
         : { ...blankDraft };
       const next = [...prev, seed];
-      setSets(date, exercise.id, draftsToEntries(next));
+      setSets(date, exercise.id, draftsToEntries(next, activeVariant));
       return next;
     });
   };
@@ -152,7 +185,7 @@ export function ExerciseCard({
         weight: String(s.weight),
         reps: String(s.reps),
       }));
-      setSets(date, exercise.id, draftsToEntries(seeded));
+      setSets(date, exercise.id, draftsToEntries(seeded, activeVariant));
       return seeded;
     });
   };
@@ -165,7 +198,7 @@ export function ExerciseCard({
       );
       const seed: Draft = filled ?? prev[prev.length - 1] ?? blankDraft;
       const next = [...prev, { ...seed }];
-      setSets(date, exercise.id, draftsToEntries(next));
+      setSets(date, exercise.id, draftsToEntries(next, activeVariant));
       return next;
     });
   };
@@ -174,9 +207,18 @@ export function ExerciseCard({
     setDrafts((prev) => {
       const next = prev.filter((_, i) => i !== idx);
       const safe = next.length === 0 ? [{ ...blankDraft }] : next;
-      setSets(date, exercise.id, draftsToEntries(safe));
+      setSets(date, exercise.id, draftsToEntries(safe, activeVariant));
       return safe;
     });
+  };
+
+  const onVariantChange = (nextVariant: string) => {
+    const norm = normalizeVariantId(nextVariant);
+    setActiveVariant(exercise.id, norm);
+    // Re-tag today's sets so a mid-session "ah this is Technogym" picks
+    // up retroactively. PR/last-session for the new variant takes effect
+    // immediately.
+    setSets(date, exercise.id, draftsToEntries(drafts, norm));
   };
 
   const repsTarget =
@@ -228,19 +270,34 @@ export function ExerciseCard({
                 </span>
               )}
             </span>
+            <VariantPicker
+              exerciseId={exercise.id}
+              activeVariant={activeVariant}
+              activeLabel={variantLabel}
+              options={variantOptions}
+              customLabels={customVariants?.[exercise.id] ?? []}
+              onSelect={onVariantChange}
+              onAddCustom={(label) => addCustomVariant(exercise.id, label)}
+              onRemoveCustom={(label) =>
+                removeCustomVariant(exercise.id, label)
+              }
+            />
           </span>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <PRBadges flags={flags} />
             <div className="flex items-center gap-1">
+              <TrainingGuide exercise={exercise} variantLabel={variantLabel} />
               <PrLadder
                 exerciseId={exercise.id}
                 beforeDate={date}
                 unit={unit}
+                variant={activeVariant}
               />
               <ExercisePRDetail
                 exercise={exercise}
                 date={date}
                 unit={unit}
+                variant={activeVariant}
               />
             </div>
           </div>

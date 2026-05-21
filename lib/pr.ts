@@ -77,13 +77,24 @@ function summarize(date: string, sets: SetEntry[]): SessionSummary {
   };
 }
 
+// Normalise variant strings so missing/empty values group together as
+// "default" for filtering and grouping.
+export function normalizeVariant(v: string | undefined): string {
+  const t = (v ?? "").trim().toLowerCase();
+  return t.length === 0 ? "default" : t;
+}
+
 // Reads all sessions for the given exercise across the alias group.
-// Sessions are returned in chronological order.
+// Sessions are returned in chronological order. When `variant` is supplied,
+// only sets matching that variant are included (so PR/chart views compare
+// like-for-like across the same machine).
 export function exerciseHistory(
   state: AppState,
-  exerciseId: string
+  exerciseId: string,
+  variant?: string
 ): SessionSummary[] {
   const ids = exerciseIdGroup(exerciseId);
+  const wantVariant = variant != null ? normalizeVariant(variant) : null;
   const out: SessionSummary[] = [];
   const dates = Object.keys(state.workoutLogs).sort();
   for (const d of dates) {
@@ -92,7 +103,12 @@ export function exerciseHistory(
     const combined: SetEntry[] = [];
     for (const id of ids) {
       const sets = entries[id];
-      if (sets && sets.length > 0) combined.push(...sets);
+      if (!sets || sets.length === 0) continue;
+      for (const s of sets) {
+        if (wantVariant == null || normalizeVariant(s.variant) === wantVariant) {
+          combined.push(s);
+        }
+      }
     }
     if (combined.length === 0) continue;
     out.push(summarize(d, combined));
@@ -147,18 +163,21 @@ export type PRFlags = {
 };
 
 // Computes the cumulative bests across all sessions strictly BEFORE `date`,
-// then compares the session on `date` against them.
+// then compares the session on `date` against them. When `variant` is
+// supplied, the comparison is scoped to that variant so swapping machines
+// doesn't blank out hard-earned PRs.
 export function sessionPRs(
   state: AppState,
   exerciseId: string,
-  date: string
+  date: string,
+  variant?: string
 ): {
   today: SessionSummary | null;
   previous: SessionSummary | null;
   flags: PRFlags;
   bestsBefore: AllTimeBests;
 } {
-  const history = exerciseHistory(state, exerciseId);
+  const history = exerciseHistory(state, exerciseId, variant);
   const past = history.filter((s) => s.date < date);
   const todaySessions = history.filter((s) => s.date === date);
   const today = todaySessions[0] ?? null;

@@ -133,6 +133,80 @@ export const DEFAULT_TARGETS = {
 // workout / food / weight logs are preserved unchanged.
 export const TEMPLATES_VERSION = 3;
 
+// Independent version for the leg-template seed. Seeded only when missing
+// AND the profile has no leg templates yet — deleting a default does NOT
+// bring it back.
+export const LEG_TEMPLATES_SEED_VERSION = 1;
+
+export const DEFAULT_LEG_TEMPLATES: WorkoutTemplate[] = [
+  {
+    id: "legs-press-day",
+    name: "Leg Press Day",
+    category: "legs",
+    focus:
+      "Quad-led leg day. Drive through heels, full range of motion, controlled tempo.",
+    exercises: [
+      {
+        id: "leg-press",
+        name: "Leg Press",
+        sets: 4,
+        repsLow: 8,
+        repsHigh: 12,
+        equipment: "machine",
+      },
+      {
+        id: "leg-extension",
+        name: "Leg Extension",
+        sets: 3,
+        repsLow: 10,
+        repsHigh: 15,
+        equipment: "machine",
+      },
+      {
+        id: "calf-raise",
+        name: "Calf Raises",
+        sets: 4,
+        repsLow: 12,
+        repsHigh: 20,
+        equipment: "machine",
+      },
+    ],
+  },
+  {
+    id: "legs-glute-squat-day",
+    name: "Glute / Squat Day",
+    category: "legs",
+    focus:
+      "Posterior chain focus. Brace hard, keep ribs down on thrusts and box squats.",
+    exercises: [
+      {
+        id: "hip-thrust",
+        name: "Hip Thrusts",
+        sets: 4,
+        repsLow: 8,
+        repsHigh: 12,
+        equipment: "barbell",
+      },
+      {
+        id: "hip-adduction",
+        name: "Hip Adduction",
+        sets: 3,
+        repsLow: 12,
+        repsHigh: 20,
+        equipment: "machine",
+      },
+      {
+        id: "box-squat",
+        name: "Barbell Box Squats",
+        sets: 3,
+        repsLow: 6,
+        repsHigh: 10,
+        equipment: "barbell",
+      },
+    ],
+  },
+];
+
 // Canonical id → display name. Used at hydration time to defensively detect
 // stale templates (e.g. from importing an old JSON export) even when
 // templatesVersion looks current.
@@ -236,8 +310,10 @@ export const DEFAULT_SETTINGS: Settings = {
   targets: DEFAULT_TARGETS,
   schedule: DEFAULT_SCHEDULE,
   templates: DEFAULT_TEMPLATES,
-  // Empty by default — users build their own leg-day templates.
-  legTemplates: [],
+  // Fresh profiles get the two starter leg templates. The seed version
+  // marker stops them from coming back if the user deletes them later.
+  legTemplates: DEFAULT_LEG_TEMPLATES,
+  legTemplatesSeededVersion: LEG_TEMPLATES_SEED_VERSION,
   templatesVersion: TEMPLATES_VERSION,
   goalWeightKg: 85,
 };

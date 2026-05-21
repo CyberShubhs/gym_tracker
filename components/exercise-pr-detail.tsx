@@ -129,15 +129,19 @@ export function ExercisePRDetail({
   exercise,
   date,
   unit,
+  variant,
 }: {
   exercise: Pick<TemplateExercise, "id" | "name" | "sets" | "repsHigh">;
   date: string;
   unit: Unit;
+  variant?: string;
 }) {
   const { state } = useStore();
+  const [showAll, setShowAll] = useState(false);
+  const filterVariant = showAll ? undefined : variant;
   const sessions = useMemo(
-    () => exerciseHistory(state, exercise.id),
-    [state, exercise.id]
+    () => exerciseHistory(state, exercise.id, filterVariant),
+    [state, exercise.id, filterVariant]
   );
   const past = useMemo(
     () => sessions.filter((s) => s.date <= date),
@@ -182,8 +186,26 @@ export function ExercisePRDetail({
             </a>
           </SheetTitle>
           <SheetDescription>
-            All-time PRs and progression history
+            {variant && variant !== "default"
+              ? `Scoped to variant: ${variant}.`
+              : "All-time PRs and progression history."}
           </SheetDescription>
+          {variant && variant !== "default" && (
+            <div className="px-4">
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors",
+                  showAll
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border/60 bg-card/40 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {showAll ? "Showing all variants" : "Show all variants"}
+              </button>
+            </div>
+          )}
         </SheetHeader>
 
         <div className="space-y-4 px-4 pb-6">

@@ -200,6 +200,7 @@ export default function WorkoutPage() {
           exercises={template.exercises}
           date={date}
           unit={state.settings.unit}
+          positionKey={template.id}
         />
       ) : isRestDay ? (
         <RestState />

@@ -24,9 +24,11 @@ import type {
   WorkoutTemplate,
 } from "./types";
 import {
+  DEFAULT_LEG_TEMPLATES,
   DEFAULT_SCHEDULE,
   DEFAULT_SETTINGS,
   DEFAULT_TEMPLATES,
+  LEG_TEMPLATES_SEED_VERSION,
   TEMPLATES_VERSION,
   needsTemplateMigration,
   validateTemplates,
@@ -64,17 +66,43 @@ function getActiveUidFromCookie(): string | null {
   return null;
 }
 
+// Seed the two starter leg templates exactly once per profile.
+// - Only runs when the seed marker is missing AND the profile has zero
+//   leg templates, so deleting a default never brings it back.
+// - Never overwrites existing user-created leg templates.
+function maybeSeedLegTemplates(
+  s: AppState["settings"]
+): AppState["settings"] {
+  const current = s.legTemplates ?? [];
+  const seeded = s.legTemplatesSeededVersion ?? 0;
+  if (seeded >= LEG_TEMPLATES_SEED_VERSION) return s;
+  if (current.length > 0) {
+    // User has their own leg templates — just record that we've reached
+    // the seed version so this branch never re-fires.
+    return {
+      ...s,
+      legTemplatesSeededVersion: LEG_TEMPLATES_SEED_VERSION,
+    };
+  }
+  return {
+    ...s,
+    legTemplates: DEFAULT_LEG_TEMPLATES,
+    legTemplatesSeededVersion: LEG_TEMPLATES_SEED_VERSION,
+  };
+}
+
 // Migrates user settings to the new upper-body plan whenever the templates
 // version is stale OR the saved templates don't pass validation (e.g. an
 // older JSON import wrote old names back over a freshly-migrated state).
 // Workout / food / weight logs are untouched.
 function migrateSettings(s: AppState["settings"]): AppState["settings"] {
-  if (!needsTemplateMigration(s.templates, s.schedule, s.templatesVersion)) {
-    return s;
+  const seeded = maybeSeedLegTemplates(s);
+  if (!needsTemplateMigration(seeded.templates, seeded.schedule, seeded.templatesVersion)) {
+    return seeded;
   }
   if (process.env.NODE_ENV !== "production") {
-    const issues = s.templates
-      ? validateTemplates(s.templates, s.schedule ?? {})
+    const issues = seeded.templates
+      ? validateTemplates(seeded.templates, seeded.schedule ?? {})
       : [{ code: "missing", detail: "no templates in saved settings" }];
     if (issues.length > 0) {
       // eslint-disable-next-line no-console
@@ -85,7 +113,7 @@ function migrateSettings(s: AppState["settings"]): AppState["settings"] {
     }
   }
   return {
-    ...s,
+    ...seeded,
     templates: DEFAULT_TEMPLATES,
     schedule: DEFAULT_SCHEDULE,
     cycle: undefined,
@@ -146,10 +174,14 @@ type StoreContextValue = {
   upsertRecipe: (recipe: Recipe) => void;
   removeRecipe: (id: string) => void;
   setExerciseNote: (exerciseId: string, note: string) => void;
+  setActiveVariant: (exerciseId: string, variant: string) => void;
+  addCustomVariant: (exerciseId: string, variant: string) => void;
+  removeCustomVariant: (exerciseId: string, variant: string) => void;
   resetAll: () => void;
   lastSessionFor: (
     exerciseId: string,
-    beforeDate: string
+    beforeDate: string,
+    variant?: string
   ) => { date: string; sets: SetEntry[] } | null;
 };
 
@@ -734,6 +766,75 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setActiveVariant = useCallback(
+    (exerciseId: string, variant: string) => {
+      const v = variant.trim();
+      setState((prev) => {
+        const cur = prev.settings.activeVariantByExercise ?? {};
+        const next = { ...cur };
+        if (!v || v.toLowerCase() === "default") {
+          delete next[exerciseId];
+        } else {
+          next[exerciseId] = v;
+        }
+        return {
+          ...prev,
+          settings: { ...prev.settings, activeVariantByExercise: next },
+        };
+      });
+    },
+    []
+  );
+
+  const addCustomVariant = useCallback(
+    (exerciseId: string, variant: string) => {
+      const v = variant.trim();
+      if (!v) return;
+      setState((prev) => {
+        const cur = prev.settings.customVariantsByExercise ?? {};
+        const list = cur[exerciseId] ?? [];
+        const norm = v.toLowerCase();
+        if (list.some((x) => x.toLowerCase() === norm)) return prev;
+        return {
+          ...prev,
+          settings: {
+            ...prev.settings,
+            customVariantsByExercise: {
+              ...cur,
+              [exerciseId]: [...list, v],
+            },
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const removeCustomVariant = useCallback(
+    (exerciseId: string, variant: string) => {
+      const v = variant.trim().toLowerCase();
+      setState((prev) => {
+        const cur = prev.settings.customVariantsByExercise ?? {};
+        const list = cur[exerciseId] ?? [];
+        const next = list.filter((x) => x.toLowerCase() !== v);
+        const nextMap = { ...cur };
+        if (next.length === 0) {
+          delete nextMap[exerciseId];
+        } else {
+          nextMap[exerciseId] = next;
+        }
+        return {
+          ...prev,
+          settings: {
+            ...prev.settings,
+            customVariantsByExercise: nextMap,
+          },
+        };
+      });
+    },
+    []
+  );
+
   const resetAll = useCallback(() => {
     // Profile-scoped reset. Wipes the active profile's row server-side,
     // resets the client state to defaults, and refreshes the cache so the
@@ -750,8 +851,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const lastSessionFor = useCallback(
-    (exerciseId: string, beforeDate: string) => {
+    (exerciseId: string, beforeDate: string, variant?: string) => {
       const ids = exerciseIdGroup(exerciseId);
+      const wantVariant =
+        variant != null
+          ? (variant.trim().toLowerCase() || "default")
+          : null;
       const dates = Object.keys(state.workoutLogs)
         .filter((d) => d < beforeDate)
         .sort()
@@ -761,7 +866,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         if (!entries) continue;
         for (const id of ids) {
           const sets = entries[id];
-          if (sets && sets.length > 0) return { date: d, sets };
+          if (!sets || sets.length === 0) continue;
+          if (wantVariant == null) {
+            return { date: d, sets };
+          }
+          const matched = sets.filter(
+            (s) =>
+              ((s.variant ?? "").trim().toLowerCase() || "default") ===
+              wantVariant
+          );
+          if (matched.length > 0) return { date: d, sets: matched };
         }
       }
       return null;
@@ -798,6 +912,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       upsertRecipe,
       removeRecipe,
       setExerciseNote,
+      setActiveVariant,
+      addCustomVariant,
+      removeCustomVariant,
       resetAll,
       lastSessionFor,
     }),
@@ -829,6 +946,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       upsertRecipe,
       removeRecipe,
       setExerciseNote,
+      setActiveVariant,
+      addCustomVariant,
+      removeCustomVariant,
       resetAll,
       lastSessionFor,
     ]

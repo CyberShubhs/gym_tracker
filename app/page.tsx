@@ -160,7 +160,7 @@ export default function HomePage() {
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  Today's workout
+                  Today&apos;s workout
                 </span>
                 {template && (
                   <span

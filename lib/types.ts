@@ -33,6 +33,10 @@ export type WorkoutTemplate = {
 export type SetEntry = {
   weight: number;
   reps: number;
+  // Optional machine/cable-stack variant tag (e.g. "technogym",
+  // "lifefitness", "cable-a"). Missing => "default". Used by PR/last-session
+  // lookups so logs from different machines don't mix.
+  variant?: string;
 };
 
 export type WorkoutLog = {
@@ -170,6 +174,15 @@ export type Settings = {
   // leg-templates feature shipped; the store defaults missing values to
   // an empty array so the user starts blank and builds their own.
   legTemplates?: WorkoutTemplate[];
+  // Marks that the leg-template defaults have already been seeded for this
+  // profile. The seed only runs when this flag is missing AND the user has
+  // zero leg templates — so deleting a default doesn't bring it back.
+  legTemplatesSeededVersion?: number;
+  // Per-exercise: which machine/equipment variant the user picked last,
+  // applied to new sets. Default if missing.
+  activeVariantByExercise?: Record<string, string>;
+  // User-defined extra variants per exercise (on top of the built-in list).
+  customVariantsByExercise?: Record<string, string[]>;
   // Bumped on every templates rewrite so existing user state migrates to
   // the new plan on next hydration without wiping logs.
   templatesVersion?: number;
