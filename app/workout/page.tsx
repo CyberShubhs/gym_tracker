@@ -155,6 +155,7 @@ export default function WorkoutPage() {
             active={mode === "legs"}
             onClick={() => setMode("legs")}
             label="Legs"
+            count={legTemplates.length}
             hint={
               legTemplates.length === 0
                 ? "No templates"
@@ -177,6 +178,7 @@ export default function WorkoutPage() {
             current={legTemplate?.id ?? ""}
             onSelect={pickLegTemplate}
             templates={legTemplates}
+            tone="legs"
           />
         )}
 
@@ -245,11 +247,13 @@ function SegmentButton({
   onClick,
   label,
   hint,
+  count,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   hint?: string;
+  count?: number;
 }) {
   return (
     <button
@@ -263,7 +267,21 @@ function SegmentButton({
           : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
       )}
     >
-      <span className="text-sm font-semibold leading-tight">{label}</span>
+      <span className="flex items-center gap-1.5 text-sm font-semibold leading-tight">
+        {label}
+        {typeof count === "number" && count > 0 && (
+          <span
+            className={cn(
+              "rounded-full px-1.5 py-px font-mono text-[10px] leading-none",
+              active
+                ? "bg-background/20 text-background"
+                : "bg-emerald-500/15 text-emerald-400"
+            )}
+          >
+            {count}
+          </span>
+        )}
+      </span>
       {hint && (
         <span
           className={cn(
@@ -282,41 +300,69 @@ function TemplateSwitcher({
   current,
   onSelect,
   templates,
+  tone,
 }: {
   current: string;
   onSelect: (id: string) => void;
   templates: WorkoutTemplate[];
+  tone?: "legs";
 }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-1">
-      {templates.map((t) => (
-        <Button
-          key={t.id}
-          variant={t.id === current ? "default" : "outline"}
-          size="sm"
-          onClick={() => onSelect(t.id)}
-          className="shrink-0"
-        >
-          {t.name}
-        </Button>
-      ))}
+      {templates.map((t) => {
+        const isActive = t.id === current;
+        const count = t.exercises.length;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onSelect(t.id)}
+            aria-pressed={isActive}
+            className={cn(
+              "group flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+              isActive
+                ? tone === "legs"
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-50"
+                  : "border-foreground bg-foreground text-background"
+                : tone === "legs"
+                ? "border-emerald-500/20 bg-card/40 text-muted-foreground hover:border-emerald-500/40 hover:text-foreground"
+                : "border-border bg-card/40 text-muted-foreground hover:border-foreground hover:text-foreground"
+            )}
+          >
+            <span className="truncate">{t.name}</span>
+            {count > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-px font-mono text-[10px] leading-none",
+                  isActive
+                    ? tone === "legs"
+                      ? "bg-emerald-500/30 text-emerald-50"
+                      : "bg-background/20 text-background"
+                    : "bg-muted/60 text-muted-foreground"
+                )}
+                aria-label={`${count} exercises`}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 function LegsEmptyState() {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+    <div className="rounded-xl border border-dashed border-emerald-500/30 bg-emerald-500/[0.04] p-8 text-center">
       <Dumbbell className="mx-auto mb-2 h-6 w-6 text-emerald-400" />
-      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-widest text-emerald-400/80">
         Legs
       </p>
-      <p className="mt-2 text-lg font-medium">
-        No leg templates yet.
-      </p>
+      <p className="mt-2 text-lg font-medium">No leg templates yet.</p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Create one to start logging leg workouts. Leg templates are kept
-        separate from your upper-body templates.
+        Build one under Settings — leg templates are kept separate from your
+        upper-body plan.
       </p>
       <Link
         href="/settings"

@@ -310,10 +310,12 @@ export const DEFAULT_SETTINGS: Settings = {
   targets: DEFAULT_TARGETS,
   schedule: DEFAULT_SCHEDULE,
   templates: DEFAULT_TEMPLATES,
-  // Fresh profiles get the two starter leg templates. The seed version
-  // marker stops them from coming back if the user deletes them later.
+  // Fresh profiles get the two starter leg templates. We do NOT preset
+  // `legTemplatesSeededVersion` here — the store's maybeSeedLegTemplates
+  // sets it after the seed runs. Keeping the marker out of DEFAULT_SETTINGS
+  // ensures that profiles that were saved with `legTemplates: []` (older
+  // builds, manual edits) still get seeded on their next load.
   legTemplates: DEFAULT_LEG_TEMPLATES,
-  legTemplatesSeededVersion: LEG_TEMPLATES_SEED_VERSION,
   templatesVersion: TEMPLATES_VERSION,
   goalWeightKg: 85,
 };
