@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { getSql } from "./db";
 import type { AppState } from "./types";
-import { DEFAULT_SETTINGS } from "./defaults";
+import { BLANK_SETTINGS, DEFAULT_SETTINGS } from "./defaults";
 import {
   SESSION_COOKIE,
   hashPasscode,
@@ -175,6 +175,19 @@ export async function createUser(
     VALUES (${attemptId}, ${trimmed}, ${hashPasscode(attemptId, code)}, ${code.length})
   `;
 
+  // Write an explicit blank state row immediately. Two reasons:
+  //   1) The first hydration sees a row that already has
+  //      `userTemplatesSeededVersion: TEMPLATES_VERSION` and
+  //      `templates: []`, so the client-side migrator leaves it alone
+  //      instead of silently re-seeding default templates.
+  //   2) Brand-new profiles can never accidentally render whatever was
+  //      cached from a previous profile during the request → response gap.
+  await sql`
+    INSERT INTO user_state (user_id, data, updated_at)
+    VALUES (${attemptId}, ${JSON.stringify(emptyAppState())}, now())
+    ON CONFLICT (user_id) DO NOTHING
+  `;
+
   const jar = await cookies();
   jar.set(SESSION_COOKIE, signSession(attemptId), {
     httpOnly: true,
@@ -219,9 +232,14 @@ export type LoadedState = {
   state: AppState;
 };
 
+// Returned for users who have never saved any state — and for the brand-new
+// row written during createUser(). New profiles intentionally start without
+// upper or leg templates, schedule entries, custom foods, recipes, notes, or
+// active variants. This is what guarantees fresh profiles do not silently
+// inherit the previous profile's plan (or the global defaults).
 function emptyAppState(): AppState {
   return {
-    settings: DEFAULT_SETTINGS,
+    settings: BLANK_SETTINGS,
     workoutLogs: {},
     foodLogs: {},
     weightLogs: {},
@@ -260,6 +278,85 @@ export async function loadState(): Promise<LoadedState> {
   };
 }
 
+// Compute the calendar-day key (YYYY-MM-DD) for the daily backup bucket.
+// We use UTC so the same wall-clock instant always lands in the same
+// bucket — handy when the user travels.
+function dailyKey(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+// ISO-week key (YYYY-Www) for the weekly bucket. Different from the date
+// string above so daily and weekly snapshots never collide.
+function weeklyKey(now: Date = new Date()): string {
+  const d = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  // ISO 8601: Thursday in the target week decides the year+week.
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(
+    ((d.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7
+  );
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+// Upsert a snapshot row. The (user_id, kind, period_key) unique index
+// means re-saving on the same day overwrites the day's daily snapshot
+// instead of producing 50 rows per day. For "manual" and "pre-restore"
+// snapshots we use a timestamp so each one is preserved.
+async function writeBackup(
+  userId: string,
+  state: AppState,
+  kind: "daily" | "weekly" | "manual" | "pre-restore",
+  source: string,
+  periodKey?: string
+): Promise<void> {
+  const sql = getSql();
+  const key = periodKey ?? new Date().toISOString();
+  await sql`
+    INSERT INTO user_state_backups (user_id, kind, period_key, data, source)
+    VALUES (${userId}, ${kind}, ${key}, ${JSON.stringify(state)}::jsonb, ${source})
+    ON CONFLICT (user_id, kind, period_key) DO UPDATE SET
+      data = EXCLUDED.data,
+      source = EXCLUDED.source,
+      created_at = now()
+  `;
+}
+
+// Retention sweep — keep the last N unprotected snapshots per (user, kind).
+// Protected snapshots are never auto-deleted so the user can pin a known
+// good state and rely on it surviving the next 30 days of activity.
+async function trimBackups(
+  userId: string,
+  kind: "daily" | "weekly" | "manual" | "pre-restore",
+  keep: number
+): Promise<void> {
+  const sql = getSql();
+  await sql`
+    DELETE FROM user_state_backups
+    WHERE id IN (
+      SELECT id FROM user_state_backups
+      WHERE user_id = ${userId} AND kind = ${kind} AND protected = false
+      ORDER BY created_at DESC
+      OFFSET ${keep}
+    )
+  `;
+}
+
+// Validate a backup blob loosely before letting it overwrite user state.
+// We don't enforce a strict schema — just enough sanity to reject obvious
+// garbage (e.g. accidental empty JSON imported from clipboard).
+function looksLikeAppState(value: unknown): value is AppState {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (!v.settings || typeof v.settings !== "object") return false;
+  if (!v.workoutLogs || typeof v.workoutLogs !== "object") return false;
+  if (!v.foodLogs || typeof v.foodLogs !== "object") return false;
+  if (!v.weightLogs || typeof v.weightLogs !== "object") return false;
+  return true;
+}
+
 export async function saveState(state: AppState): Promise<{ ok: true }> {
   const userId = await currentUserId();
   if (!userId) throw new Error("Unauthorized");
@@ -271,6 +368,297 @@ export async function saveState(state: AppState): Promise<{ ok: true }> {
     ON CONFLICT (user_id) DO UPDATE SET
       data = EXCLUDED.data,
       updated_at = EXCLUDED.updated_at
+  `;
+  // Snapshot-on-save: the daily/weekly snapshot for THIS user is upserted
+  // on every save. The ON CONFLICT path means we only ever have one row
+  // per (user, kind, period_key) — saving 200 times today produces 1
+  // daily backup, not 200. This deliberately doesn't depend on cron or a
+  // browser being open at midnight.
+  try {
+    const now = new Date();
+    await writeBackup(userId, state, "daily", "auto:save", dailyKey(now));
+    await writeBackup(
+      userId,
+      state,
+      "weekly",
+      "auto:save",
+      weeklyKey(now)
+    );
+    await trimBackups(userId, "daily", 30);
+    await trimBackups(userId, "weekly", 12);
+    await trimBackups(userId, "manual", 20);
+    await trimBackups(userId, "pre-restore", 10);
+  } catch {
+    // Backup failures must never block the primary save — the user_state
+    // row is the source of truth and was already updated above.
+  }
+  return { ok: true };
+}
+
+export type BackupSummary = {
+  id: number;
+  kind: "daily" | "weekly" | "manual" | "pre-restore";
+  periodKey: string;
+  source: string | null;
+  createdAt: string;
+  protected: boolean;
+  bytes: number;
+  workoutDays: number;
+  foodDays: number;
+  weightDays: number;
+};
+
+function summarizeBackupRow(row: {
+  id: number | string;
+  kind: string;
+  period_key: string;
+  data: unknown;
+  source: string | null;
+  protected: boolean;
+  created_at: Date | string;
+}): BackupSummary {
+  const serialized = JSON.stringify(row.data ?? {});
+  const data = row.data as Partial<AppState> | null;
+  return {
+    id: Number(row.id),
+    kind: row.kind as BackupSummary["kind"],
+    periodKey: row.period_key,
+    source: row.source ?? null,
+    createdAt:
+      typeof row.created_at === "string"
+        ? row.created_at
+        : row.created_at.toISOString(),
+    protected: !!row.protected,
+    bytes: serialized.length,
+    workoutDays: Object.keys(data?.workoutLogs ?? {}).length,
+    foodDays: Object.keys(data?.foodLogs ?? {}).length,
+    weightDays: Object.keys(data?.weightLogs ?? {}).length,
+  };
+}
+
+export async function listBackups(): Promise<BackupSummary[]> {
+  const userId = await currentUserId();
+  if (!userId) return [];
+  await migrate();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT id, kind, period_key, data, source, protected, created_at
+    FROM user_state_backups
+    WHERE user_id = ${userId}
+    ORDER BY created_at DESC
+    LIMIT 100
+  `) as Array<{
+    id: number | string;
+    kind: string;
+    period_key: string;
+    data: unknown;
+    source: string | null;
+    protected: boolean;
+    created_at: Date | string;
+  }>;
+  return rows.map(summarizeBackupRow);
+}
+
+export type BackupStatus = {
+  lastSavedAt: string | null;
+  lastDaily: BackupSummary | null;
+  lastWeekly: BackupSummary | null;
+  totalBackups: number;
+};
+
+export async function backupStatus(): Promise<BackupStatus> {
+  const userId = await currentUserId();
+  if (!userId) {
+    return {
+      lastSavedAt: null,
+      lastDaily: null,
+      lastWeekly: null,
+      totalBackups: 0,
+    };
+  }
+  await migrate();
+  const sql = getSql();
+  const stateRow = (await sql`
+    SELECT updated_at FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ updated_at: Date | string }>;
+  const daily = (await sql`
+    SELECT id, kind, period_key, data, source, protected, created_at
+    FROM user_state_backups
+    WHERE user_id = ${userId} AND kind = 'daily'
+    ORDER BY created_at DESC LIMIT 1
+  `) as Array<{
+    id: number | string;
+    kind: string;
+    period_key: string;
+    data: unknown;
+    source: string | null;
+    protected: boolean;
+    created_at: Date | string;
+  }>;
+  const weekly = (await sql`
+    SELECT id, kind, period_key, data, source, protected, created_at
+    FROM user_state_backups
+    WHERE user_id = ${userId} AND kind = 'weekly'
+    ORDER BY created_at DESC LIMIT 1
+  `) as typeof daily;
+  const total = (await sql`
+    SELECT COUNT(*)::int AS n FROM user_state_backups WHERE user_id = ${userId}
+  `) as Array<{ n: number }>;
+  const lastSavedAt = stateRow[0]
+    ? typeof stateRow[0].updated_at === "string"
+      ? stateRow[0].updated_at
+      : stateRow[0].updated_at.toISOString()
+    : null;
+  return {
+    lastSavedAt,
+    lastDaily: daily[0] ? summarizeBackupRow(daily[0]) : null,
+    lastWeekly: weekly[0] ? summarizeBackupRow(weekly[0]) : null,
+    totalBackups: total[0]?.n ?? 0,
+  };
+}
+
+export async function triggerManualBackup(): Promise<{
+  ok: boolean;
+  error?: string;
+}> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Not signed in" };
+  await migrate();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT data FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (rows.length === 0 || !looksLikeAppState(rows[0].data)) {
+    return { ok: false, error: "No saved state to back up yet." };
+  }
+  await writeBackup(
+    userId,
+    rows[0].data as AppState,
+    "manual",
+    "manual:user"
+  );
+  await trimBackups(userId, "manual", 20);
+  return { ok: true };
+}
+
+export async function downloadLatestBackup(): Promise<{
+  ok: boolean;
+  filename?: string;
+  payload?: string;
+  error?: string;
+}> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Not signed in" };
+  await migrate();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT data, created_at FROM user_state_backups
+    WHERE user_id = ${userId}
+    ORDER BY created_at DESC LIMIT 1
+  `) as Array<{ data: unknown; created_at: Date | string }>;
+  if (rows.length === 0) {
+    // No backup row yet — fall back to the live state so the user can
+    // still get a JSON download from this server action.
+    const live = (await sql`
+      SELECT data FROM user_state WHERE user_id = ${userId}
+    `) as Array<{ data: unknown }>;
+    if (live.length === 0) {
+      return { ok: false, error: "Nothing to back up yet." };
+    }
+    return {
+      ok: true,
+      filename: `gym-tracker-${userId}-${dailyKey()}.json`,
+      payload: JSON.stringify(live[0].data, null, 2),
+    };
+  }
+  return {
+    ok: true,
+    filename: `gym-tracker-${userId}-${dailyKey()}.json`,
+    payload: JSON.stringify(rows[0].data, null, 2),
+  };
+}
+
+export async function restoreBackup(
+  backupId: number
+): Promise<{ ok: boolean; error?: string }> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Not signed in" };
+  await migrate();
+  const sql = getSql();
+  // Critical: filter the restore lookup by user_id so a forged backupId
+  // from another profile can never pull data into this account. The
+  // server is the only authority here — the client cannot inject userId.
+  const rows = (await sql`
+    SELECT data FROM user_state_backups
+    WHERE id = ${backupId} AND user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (rows.length === 0) {
+    return { ok: false, error: "Backup not found for this profile." };
+  }
+  const blob = rows[0].data;
+  if (!looksLikeAppState(blob)) {
+    return { ok: false, error: "Backup is unreadable." };
+  }
+  // Snapshot the current state as a pre-restore safety net BEFORE we
+  // overwrite — gives the user one-click rollback if they realize they
+  // restored the wrong backup.
+  const current = (await sql`
+    SELECT data FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (current.length > 0 && looksLikeAppState(current[0].data)) {
+    try {
+      await writeBackup(
+        userId,
+        current[0].data as AppState,
+        "pre-restore",
+        `pre-restore:from-${backupId}`
+      );
+      await trimBackups(userId, "pre-restore", 10);
+    } catch {
+      // Pre-restore snapshot is best-effort; the requested restore still
+      // proceeds because the user explicitly asked for it.
+    }
+  }
+  await sql`
+    INSERT INTO user_state (user_id, data, updated_at)
+    VALUES (${userId}, ${JSON.stringify(blob)}, now())
+    ON CONFLICT (user_id) DO UPDATE SET
+      data = EXCLUDED.data,
+      updated_at = EXCLUDED.updated_at
+  `;
+  return { ok: true };
+}
+
+export async function deleteBackup(
+  backupId: number
+): Promise<{ ok: boolean; error?: string }> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Not signed in" };
+  await migrate();
+  const sql = getSql();
+  const result = (await sql`
+    DELETE FROM user_state_backups
+    WHERE id = ${backupId} AND user_id = ${userId} AND protected = false
+    RETURNING id
+  `) as Array<{ id: number }>;
+  if (result.length === 0) {
+    return { ok: false, error: "Backup is protected or not found." };
+  }
+  return { ok: true };
+}
+
+export async function setBackupProtected(
+  backupId: number,
+  isProtected: boolean
+): Promise<{ ok: boolean }> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false };
+  await migrate();
+  const sql = getSql();
+  await sql`
+    UPDATE user_state_backups
+    SET protected = ${isProtected}
+    WHERE id = ${backupId} AND user_id = ${userId}
   `;
   return { ok: true };
 }

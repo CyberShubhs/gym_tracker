@@ -29,7 +29,12 @@ import { PrLadder } from "@/components/pr-ladder";
 import { ExercisePRDetail } from "@/components/exercise-pr-detail";
 import { TrainingGuide } from "@/components/training-guide";
 import { VariantPicker } from "@/components/variant-picker";
-import { progressionAdvice, sessionPRs, type PRFlags } from "@/lib/pr";
+import {
+  loadDirectionFor,
+  progressionAdvice,
+  sessionPRs,
+  type PRFlags,
+} from "@/lib/pr";
 import {
   allVariantsFor,
   normalizeVariantId,
@@ -154,8 +159,19 @@ export function ExerciseCard({
     setDrafts(entriesToDrafts(todaySets, exercise.sets));
   }, [date, exercise.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const direction = loadDirectionFor(exercise.id, {
+    exercise,
+    variant: activeVariant,
+    settings: state.settings,
+  });
   const last = lastSessionFor(exercise.id, date, activeVariant);
-  const { flags } = sessionPRs(state, exercise.id, date, activeVariant);
+  const { flags } = sessionPRs(
+    state,
+    exercise.id,
+    date,
+    activeVariant,
+    direction
+  );
   const advice = progressionAdvice(exercise, todaySets);
 
   const updateDraft = (idx: number, patch: Partial<Draft>) => {

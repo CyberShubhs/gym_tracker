@@ -32,6 +32,7 @@ import type {
 } from "@/lib/types";
 import { cn, todayISO } from "@/lib/utils";
 import { DataIO } from "@/components/data-io";
+import { BackupPanel } from "@/components/backup-panel";
 import { HardcoreToggle } from "@/components/hardcore-toggle";
 import {
   LIFESTYLE_OPTIONS,
@@ -383,8 +384,16 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Backup & access"
-        description="Export your data as JSON, import a backup, or lock the app."
+        title="Backups"
+        description="Automatic daily and weekly snapshots, plus manual snapshots and one-click restore. Scoped to this profile only."
+        summary="Server-side snapshots + manual export"
+      >
+        <BackupPanel />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Manual export & access"
+        description="Download or upload a full JSON copy, or sign out."
       >
         <div className="space-y-3">
           <DataIO />

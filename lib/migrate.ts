@@ -37,5 +37,30 @@ export async function ensureSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `;
+  // Automated backup history. Every save can write a daily/weekly
+  // snapshot here (snapshotForBackup in lib/actions.ts), plus explicit
+  // manual + pre-restore snapshots. The (user_id, kind, period_key)
+  // uniqueness lets us idempotently upsert the latest snapshot per
+  // day/week without growing one row per save.
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_state_backups (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      data JSONB NOT NULL,
+      source TEXT,
+      protected BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS user_state_backups_period_uniq
+    ON user_state_backups (user_id, kind, period_key)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_state_backups_user_created_idx
+    ON user_state_backups (user_id, created_at DESC)
+  `;
   initialized = true;
 }

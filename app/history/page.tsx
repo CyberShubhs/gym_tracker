@@ -80,16 +80,18 @@ export default function HistoryPage() {
       ...(state.settings.legTemplates ?? []),
     ].map((t) => [t.id, t])
   );
-  const exerciseNameById: Record<string, string> = {
-    // Legacy ids that no longer appear in any current template — still
-    // surface a readable label for historical logs.
+  // Resolve the display name and category for a log. Snapshot wins —
+  // that's what guarantees a workout logged six months ago still says
+  // "Push A — Strength" even if the user has since renamed that template
+  // in Settings or added/removed exercises from it.
+  const liveExerciseNameById: Record<string, string> = {
     ...LEGACY_EXERCISE_NAMES,
   };
   for (const t of state.settings.templates) {
-    for (const e of t.exercises) exerciseNameById[e.id] = e.name;
+    for (const e of t.exercises) liveExerciseNameById[e.id] = e.name;
   }
   for (const t of state.settings.legTemplates ?? []) {
-    for (const e of t.exercises) exerciseNameById[e.id] = e.name;
+    for (const e of t.exercises) liveExerciseNameById[e.id] = e.name;
   }
 
   return (
@@ -125,7 +127,21 @@ export default function HistoryPage() {
           ) : (
             workoutDates.map((date) => {
               const log = state.workoutLogs[date];
-              const t = templateById[log.templateId];
+              const snapshot = log.templateSnapshot;
+              const live = templateById[log.templateId];
+              const templateName = snapshot?.name ?? live?.name ?? log.templateId;
+              const templateCategory = snapshot?.category ?? live?.category;
+              // Names map for this specific log: snapshot exercises first
+              // (so the entries display as they were on the logged day),
+              // then live templates, then legacy fallbacks.
+              const namesForLog: Record<string, string> = {
+                ...liveExerciseNameById,
+              };
+              if (snapshot) {
+                for (const e of snapshot.exercises) {
+                  namesForLog[e.id] = e.name;
+                }
+              }
               return (
                 <Card key={date} className="border-border/70">
                   <CardHeader className="pb-3">
@@ -133,18 +149,18 @@ export default function HistoryPage() {
                       <span className="flex flex-col">
                         <span>{formatDate(date)}</span>
                         <span className="text-xs font-normal text-muted-foreground">
-                          {t?.name ?? log.templateId}
+                          {templateName}
                         </span>
                       </span>
-                      {t && (
+                      {templateCategory && (
                         <Badge
                           variant="outline"
                           className={cn(
                             "font-mono text-[10px] uppercase tracking-widest",
-                            CATEGORY_ACCENT[t.category]
+                            CATEGORY_ACCENT[templateCategory]
                           )}
                         >
-                          {CATEGORY_LABEL[t.category]}
+                          {CATEGORY_LABEL[templateCategory]}
                         </Badge>
                       )}
                     </CardTitle>
@@ -161,7 +177,7 @@ export default function HistoryPage() {
                       </p>
                     )}
                     {Object.entries(log.entries).map(([exId, sets]) => {
-                      const exName = exerciseNameById[exId] ?? exId;
+                      const exName = namesForLog[exId] ?? exId;
                       return (
                       <div key={exId} className="space-y-1.5">
                         <a

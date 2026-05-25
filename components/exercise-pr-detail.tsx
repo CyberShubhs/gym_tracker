@@ -17,6 +17,7 @@ import { useStore } from "@/lib/store";
 import {
   allTimeBests,
   exerciseHistory,
+  loadDirectionFor,
   type SessionSummary,
 } from "@/lib/pr";
 import { cn, shortDate } from "@/lib/utils";
@@ -82,20 +83,31 @@ function round1(n: number): number {
 
 type PRType = "weight" | "rep" | "e1rm" | "volume";
 
-function computePREvents(sessions: SessionSummary[]): Map<string, PRType[]> {
+function computePREvents(
+  sessions: SessionSummary[],
+  direction: "normal" | "assistance" = "normal"
+): Map<string, PRType[]> {
   const out = new Map<string, PRType[]>();
-  let maxWeight = 0;
+  // For assistance loads "best" is the lowest value, so seed with +Inf
+  // and compare with <.
+  let maxWeight = direction === "assistance" ? Infinity : 0;
   let best1RM = 0;
   let bestVolume = 0;
   const repsAtWeight = new Map<number, number>();
+  const isBetterWeight = (a: number, b: number) =>
+    direction === "assistance" ? a < b - 1e-6 : a > b + 1e-6;
   for (const s of sessions) {
     const events: PRType[] = [];
     let nextMaxWeight = maxWeight;
     let nextBest1RM = best1RM;
     let nextBestVolume = bestVolume;
     let repPR = false;
-    if (s.maxWeight > maxWeight + 1e-6) {
+    if (Number.isFinite(maxWeight) && isBetterWeight(s.maxWeight, maxWeight)) {
       events.push("weight");
+      nextMaxWeight = s.maxWeight;
+    } else if (!Number.isFinite(maxWeight)) {
+      // Seed the running best on the very first session WITHOUT firing a
+      // weight PR — the first session can't beat itself.
       nextMaxWeight = s.maxWeight;
     }
     if (s.best1RM > best1RM + 1e-6) {
@@ -139,16 +151,27 @@ export function ExercisePRDetail({
   const { state } = useStore();
   const [showAll, setShowAll] = useState(false);
   const filterVariant = showAll ? undefined : variant;
+  const direction = loadDirectionFor(exercise.id, {
+    exercise,
+    variant,
+    settings: state.settings,
+  });
   const sessions = useMemo(
-    () => exerciseHistory(state, exercise.id, filterVariant),
-    [state, exercise.id, filterVariant]
+    () => exerciseHistory(state, exercise.id, filterVariant, direction),
+    [state, exercise.id, filterVariant, direction]
   );
   const past = useMemo(
     () => sessions.filter((s) => s.date <= date),
     [sessions, date]
   );
-  const bests = useMemo(() => allTimeBests(past), [past]);
-  const prEvents = useMemo(() => computePREvents(past), [past]);
+  const bests = useMemo(
+    () => allTimeBests(past, direction),
+    [past, direction]
+  );
+  const prEvents = useMemo(
+    () => computePREvents(past, direction),
+    [past, direction]
+  );
   const [metricKey, setMetricKey] = useState<MetricKey>("maxWeight");
   const metric = METRICS.find((m) => m.key === metricKey)!;
 

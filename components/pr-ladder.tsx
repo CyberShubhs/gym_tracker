@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { exerciseHistory } from "@/lib/pr";
+import { exerciseHistory, loadDirectionFor } from "@/lib/pr";
 import { cn } from "@/lib/utils";
 
 export function PrLadder({
@@ -16,9 +16,16 @@ export function PrLadder({
   variant?: string;
 }) {
   const { state } = useStore();
-  const sessions = exerciseHistory(state, exerciseId, variant).filter(
-    (s) => s.date <= beforeDate
-  );
+  const direction = loadDirectionFor(exerciseId, {
+    variant,
+    settings: state.settings,
+  });
+  const sessions = exerciseHistory(
+    state,
+    exerciseId,
+    variant,
+    direction
+  ).filter((s) => s.date <= beforeDate);
   const last = sessions.slice(-5);
   if (last.length < 2) return null;
 
@@ -36,11 +43,15 @@ export function PrLadder({
     .map((s, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(s.best1RM)}`)
     .join(" ");
 
+  // For "assistance" exercises, a downward arrow on the ladder is good
+  // (less machine help) — flip the colors so the visual cue matches the
+  // direction of progress.
   const trend = last[last.length - 1].maxWeight - last[0].maxWeight;
+  const goodSign = direction === "assistance" ? -1 : 1;
   const trendColor =
-    trend > 0
+    trend * goodSign > 0
       ? "stroke-emerald-400"
-      : trend < 0
+      : trend * goodSign < 0
       ? "stroke-rose-400"
       : "stroke-muted-foreground";
 

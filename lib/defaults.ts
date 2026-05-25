@@ -297,8 +297,19 @@ export function validateTemplates(
 export function needsTemplateMigration(
   templates: WorkoutTemplate[] | undefined,
   schedule: Record<number, string> | undefined,
-  version: number | undefined
+  version: number | undefined,
+  userTemplatesSeededVersion?: number
 ): boolean {
+  // A profile that has explicitly been seeded — including the brand-new
+  // empty seed — is *intentional*. Never auto-overwrite its templates
+  // even when the templates array is empty.
+  if (
+    (userTemplatesSeededVersion ?? 0) >= TEMPLATES_VERSION &&
+    Array.isArray(templates) &&
+    schedule
+  ) {
+    return false;
+  }
   if ((version ?? 0) < TEMPLATES_VERSION) return true;
   if (!templates || !schedule) return true;
   return validateTemplates(templates, schedule).length > 0;
@@ -318,6 +329,24 @@ export const DEFAULT_SETTINGS: Settings = {
   legTemplates: DEFAULT_LEG_TEMPLATES,
   templatesVersion: TEMPLATES_VERSION,
   goalWeightKg: 85,
+};
+
+// A brand-new profile starts here. No upper templates, no leg templates,
+// empty weekday schedule, no copied custom foods / recipes / notes. The
+// seed-version markers are set so neither maybeSeedLegTemplates nor
+// needsTemplateMigration will re-fill anything behind the user's back —
+// they are expected to build their own plan in Settings or click the
+// starter button.
+export const BLANK_SETTINGS: Settings = {
+  unit: "kg",
+  heightCm: 183,
+  targets: DEFAULT_TARGETS,
+  schedule: { 0: "", 1: "", 2: "", 3: "", 4: "", 5: "", 6: "" },
+  templates: [],
+  legTemplates: [],
+  templatesVersion: TEMPLATES_VERSION,
+  legTemplatesSeededVersion: LEG_TEMPLATES_SEED_VERSION,
+  userTemplatesSeededVersion: TEMPLATES_VERSION,
 };
 
 export const DAY_NAMES = [

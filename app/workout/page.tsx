@@ -19,16 +19,20 @@ import { Button } from "@/components/ui/button";
 import { RecoveryCard } from "@/components/recovery-card";
 import { SaveIndicator } from "@/components/save-indicator";
 import { DateNav } from "@/components/date-nav";
-import { plannedTemplate, shiftCycleTo } from "@/lib/cycle";
+import { plannedTemplate } from "@/lib/cycle";
 import { useRestTimer } from "@/components/rest-timer";
-import type { WorkoutTemplate } from "@/lib/types";
+import { uidStorageSuffix } from "@/lib/uid-client";
+import type { TemplateExercise, WorkoutTemplate } from "@/lib/types";
 
 type Mode = "upper" | "legs";
-const LEG_PICK_KEY = "gym-tracker:active-leg-template:v1";
+function legPickKey(): string {
+  // Uid-scoped so switching profiles cannot make the new user inherit the
+  // previous user's last-selected leg template.
+  return `gym-tracker:active-leg-template:v2:${uidStorageSuffix()}`;
+}
 
 export default function WorkoutPage() {
-  const { hydrated, state, updateSettings, ensureWorkoutLog, markRestComplete } =
-    useStore();
+  const { hydrated, state, ensureWorkoutLog, markRestComplete } = useStore();
   const [date, setDate] = useState<string>(() => todayISO());
   const [mode, setMode] = useState<Mode>("upper");
   const { start: startRest, active: restActive } = useRestTimer();
@@ -44,43 +48,74 @@ export default function WorkoutPage() {
 
   const scheduledTemplateId = plannedTemplate(date, state.settings);
   const log = state.workoutLogs[date];
-  const isCommitted = !!(
-    log &&
-    (Object.keys(log.entries).length > 0 ||
-      log.completedRest ||
-      log.didOptional !== undefined ||
-      log.recovery !== undefined)
-  );
-  const activeUpperId = isCommitted ? log!.templateId : scheduledTemplateId;
-  const upperTemplate: WorkoutTemplate | undefined =
-    state.settings.templates.find((t) => t.id === activeUpperId);
+  const upperTemplates = state.settings.templates;
   const legTemplates = state.settings.legTemplates ?? [];
+  const hasNoTemplates = upperTemplates.length === 0 && legTemplates.length === 0;
+
+  // Resolve the upper-mode template:
+  //   1) If the log has an immutable snapshot AND the snapshot is an upper
+  //      template, render that snapshot verbatim. This is what keeps an
+  //      old logged Sunday workout readable after the template behind it
+  //      was renamed or had exercises swapped out in Settings.
+  //   2) Otherwise, if the log's templateId points at a current upper
+  //      template, use that. (Picking a non-rest workout on Sunday now
+  //      sticks immediately, without needing to log a set first.)
+  //   3) Otherwise, fall back to the scheduled template for that weekday.
+  const snapshot = log?.templateSnapshot;
+  const upperFromLog =
+    snapshot && snapshot.category !== "legs"
+      ? snapshot
+      : upperTemplates.find((t) => t.id === log?.templateId);
+  const scheduledUpper = upperTemplates.find(
+    (t) => t.id === scheduledTemplateId
+  );
+  const upperTemplate: WorkoutTemplate | undefined =
+    upperFromLog ?? scheduledUpper;
+  const activeUpperId = upperTemplate?.id ?? scheduledTemplateId;
+  // A log whose templateId belongs to the leg list — used so the carousel
+  // and the leg picker pre-select the user's existing pick on this date.
+  const loggedLegId =
+    snapshot?.category === "legs"
+      ? snapshot.id
+      : legTemplates.find((t) => t.id === log?.templateId)?.id;
 
   // Auto-switch to Legs when today's planned template *is* legs.
   useEffect(() => {
     if (upperTemplate?.category === "legs") setMode("legs");
   }, [upperTemplate?.category]);
 
-  // Persist the user's currently-picked leg template across refreshes.
+  // Persist the user's currently-picked leg template across refreshes —
+  // scoped per-profile so a different login can never inherit it.
   const [activeLegId, setActiveLegId] = useState<string | null>(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem(LEG_PICK_KEY);
+    const saved = window.localStorage.getItem(legPickKey());
     if (saved) setActiveLegId(saved);
   }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (activeLegId) window.localStorage.setItem(LEG_PICK_KEY, activeLegId);
+    if (activeLegId) window.localStorage.setItem(legPickKey(), activeLegId);
   }, [activeLegId]);
-  // Default to the first leg template if the saved one disappeared.
+  // The leg snapshot, if the user already logged a leg workout for this
+  // date — wins over the live template list so renames/edits in Settings
+  // can't reshape an old log retroactively.
+  const legSnapshot =
+    snapshot?.category === "legs" ? snapshot : undefined;
+  // Default to the first leg template if the saved one disappeared. A
+  // committed leg log for this date takes priority over the picker.
   const legTemplate: WorkoutTemplate | undefined = useMemo(() => {
+    if (legSnapshot) return legSnapshot;
     if (legTemplates.length === 0) return undefined;
+    if (loggedLegId) {
+      const found = legTemplates.find((t) => t.id === loggedLegId);
+      if (found) return found;
+    }
     if (activeLegId) {
       const found = legTemplates.find((t) => t.id === activeLegId);
       if (found) return found;
     }
     return legTemplates[0];
-  }, [legTemplates, activeLegId]);
+  }, [legTemplates, activeLegId, loggedLegId, legSnapshot]);
 
   if (!hydrated) {
     return (
@@ -99,10 +134,12 @@ export default function WorkoutPage() {
     isOptionalDay && log?.didOptional === false && mode === "upper";
   const showWorkout = !isRestDay && !declinedOptional;
 
+  // Pick a template for THIS date only. We deliberately do NOT shift the
+  // weekday cycle anymore — picking a non-rest workout on Sunday should
+  // only affect Sunday, not silently re-map Monday→Tuesday→… as the old
+  // shiftCycleTo path used to do.
   const pickUpperTemplate = (id: string) => {
-    const shift = shiftCycleTo(date, id, state.settings);
-    if (shift) updateSettings(shift);
-    else ensureWorkoutLog(date, id);
+    ensureWorkoutLog(date, id);
   };
 
   const pickLegTemplate = (id: string) => {
@@ -193,13 +230,17 @@ export default function WorkoutPage() {
         <RecoveryCard date={date} optional={isOptionalDay} />
       )}
 
-      {mode === "legs" && legTemplates.length === 0 ? (
+      {hasNoTemplates ? (
+        <NoTemplatesState />
+      ) : mode === "upper" && upperTemplates.length === 0 ? (
+        <UpperEmptyState />
+      ) : mode === "legs" && legTemplates.length === 0 ? (
         <LegsEmptyState />
       ) : mode === "legs" && legTemplate && legTemplate.exercises.length === 0 ? (
         <LegsTemplateEmpty templateName={legTemplate.name} />
       ) : showWorkout && template && template.exercises.length > 0 ? (
         <ExerciseCarousel
-          exercises={template.exercises}
+          exercises={template.exercises as TemplateExercise[]}
           date={date}
           unit={state.settings.unit}
           positionKey={template.id}
@@ -348,6 +389,52 @@ function TemplateSwitcher({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function NoTemplatesState() {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+      <Dumbbell className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Start fresh
+      </p>
+      <p className="mt-2 text-lg font-medium">No templates yet.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Your profile is empty by design — build an upper or leg template in
+        Settings to start logging sets.
+      </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-3 py-1.5 text-sm font-medium transition-colors hover:border-foreground"
+      >
+        <SettingsIcon className="h-3.5 w-3.5" />
+        Open Settings → Templates
+      </Link>
+    </div>
+  );
+}
+
+function UpperEmptyState() {
+  return (
+    <div className="rounded-xl border border-dashed border-border bg-card/40 p-8 text-center">
+      <Plus className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
+      <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">
+        Upper body
+      </p>
+      <p className="mt-2 text-lg font-medium">No upper-body templates yet.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Add one under Settings, or switch to Legs above if you have leg
+        templates set up.
+      </p>
+      <Link
+        href="/settings"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-3 py-1.5 text-sm font-medium transition-colors hover:border-foreground"
+      >
+        <SettingsIcon className="h-3.5 w-3.5" />
+        Open Settings → Upper body templates
+      </Link>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type { TemplateExercise, Unit } from "@/lib/types";
 import { ExerciseCard } from "@/components/exercise-card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { uidStorageSuffix } from "@/lib/uid-client";
 
 type Props = {
   exercises: TemplateExercise[];
@@ -57,14 +58,18 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
-const POSITION_STORE_KEY = "gym-tracker:carousel-position:v1";
+// Uid-scoped so that switching profiles (or signing out) never restores
+// the previous user's last exercise into the new user's view.
+function positionStoreKey(): string {
+  return `gym-tracker:carousel-position:v2:${uidStorageSuffix()}`;
+}
 
 type PositionMap = Record<string, { exerciseId: string; ts: number }>;
 
 function loadPositions(): PositionMap {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(POSITION_STORE_KEY);
+    const raw = window.localStorage.getItem(positionStoreKey());
     if (!raw) return {};
     return (JSON.parse(raw) as PositionMap) ?? {};
   } catch {
@@ -77,7 +82,7 @@ function savePosition(key: string, exerciseId: string) {
   try {
     const all = loadPositions();
     all[key] = { exerciseId, ts: Date.now() };
-    window.localStorage.setItem(POSITION_STORE_KEY, JSON.stringify(all));
+    window.localStorage.setItem(positionStoreKey(), JSON.stringify(all));
   } catch {
     // ignore
   }
@@ -94,19 +99,24 @@ export function ExerciseCarousel({
   const index = count > 0 ? ((rawIndex % count) + count) % count : 0;
   const reducedMotion = useReducedMotion();
 
-  // Restore last position for this (date, template) combo. Falls back to 0
-  // when the stored exercise no longer exists in the template.
-  const restoredRef = useRef(false);
+  // Restore last position for this (date, template) combo on every
+  // (positionKey, date, exercises) change. Previously this only ran once
+  // per mount, which meant navigating between dates / switching the
+  // template inside the same Workout view kept the old rawIndex — pointing
+  // at an exercise that no longer exists in the new template. Falling back
+  // to 0 when the stored exercise is gone keeps the carousel anchored on
+  // the first card of the new template instead of an orphaned cube face.
   useEffect(() => {
-    if (restoredRef.current) return;
-    restoredRef.current = true;
-    if (!positionKey || count === 0) return;
-    const all = loadPositions();
+    if (!positionKey || count === 0) {
+      setIndex(0);
+      return;
+    }
     const key = `${positionKey}::${date}`;
-    const stored = all[key]?.exerciseId;
-    if (!stored) return;
-    const idx = exercises.findIndex((e) => e.id === stored);
-    if (idx >= 0) setIndex(idx);
+    const stored = loadPositions()[key]?.exerciseId;
+    const idx = stored
+      ? exercises.findIndex((e) => e.id === stored)
+      : -1;
+    setIndex(idx >= 0 ? idx : 0);
   }, [positionKey, date, exercises, count]);
 
   // Persist on every index change.

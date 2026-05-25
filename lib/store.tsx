@@ -22,6 +22,7 @@ import type {
   WeightLog,
   WorkoutLog,
   WorkoutTemplate,
+  WorkoutTemplateSnapshot,
 } from "./types";
 import {
   DEFAULT_LEG_TEMPLATES,
@@ -95,10 +96,29 @@ function maybeSeedLegTemplates(
 // version is stale OR the saved templates don't pass validation (e.g. an
 // older JSON import wrote old names back over a freshly-migrated state).
 // Workout / food / weight logs are untouched.
+//
+// IMPORTANT: A profile that has explicitly been seeded (the brand-new
+// blank seed via BLANK_SETTINGS, or any prior successful run of this
+// function) carries `userTemplatesSeededVersion >= TEMPLATES_VERSION` and
+// is left alone. That is how a freshly-created profile keeps its empty
+// `templates: []` instead of getting the global defaults poured back in.
 function migrateSettings(s: AppState["settings"]): AppState["settings"] {
   const seeded = maybeSeedLegTemplates(s);
-  if (!needsTemplateMigration(seeded.templates, seeded.schedule, seeded.templatesVersion)) {
-    return seeded;
+  if (
+    !needsTemplateMigration(
+      seeded.templates,
+      seeded.schedule,
+      seeded.templatesVersion,
+      seeded.userTemplatesSeededVersion
+    )
+  ) {
+    // Stamp the marker on first hydration even when nothing changes so
+    // legacy profiles that already happen to pass validation never get
+    // re-seeded by a future build.
+    if ((seeded.userTemplatesSeededVersion ?? 0) >= TEMPLATES_VERSION) {
+      return seeded;
+    }
+    return { ...seeded, userTemplatesSeededVersion: TEMPLATES_VERSION };
   }
   if (process.env.NODE_ENV !== "production") {
     const issues = seeded.templates
@@ -119,6 +139,7 @@ function migrateSettings(s: AppState["settings"]): AppState["settings"] {
     cycle: undefined,
     cycleAnchor: undefined,
     templatesVersion: TEMPLATES_VERSION,
+    userTemplatesSeededVersion: TEMPLATES_VERSION,
   };
 }
 
@@ -204,7 +225,51 @@ function baseLogFor(prev: AppState, date: string): WorkoutLog {
     date,
     templateId: plannedTemplate(date, prev.settings),
     entries: existing?.entries ?? {},
+    templateSnapshot: existing?.templateSnapshot,
   };
+}
+
+// Find a template by id across BOTH upper and leg lists. The two arrays
+// are kept separate but a workout log's templateId can refer to either.
+function findTemplateById(
+  settings: Settings,
+  id: string
+): WorkoutTemplate | undefined {
+  return (
+    settings.templates.find((t) => t.id === id) ??
+    (settings.legTemplates ?? []).find((t) => t.id === id)
+  );
+}
+
+// Build a snapshot of a template at the moment a log is first committed.
+// We deep-clone the exercises (rather than holding a reference into
+// settings.templates) so a later edit in Settings can never mutate the
+// snapshot in place — the snapshot lives in the workout log JSON as its
+// own copy.
+function snapshotTemplate(
+  template: WorkoutTemplate
+): WorkoutTemplateSnapshot {
+  return {
+    id: template.id,
+    name: template.name,
+    category: template.category,
+    focus: template.focus,
+    exercises: template.exercises.map((e) => ({ ...e })),
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+// Capture the snapshot lazily — only the first time a log's templateId
+// resolves to a current template. After that, the existing snapshot is
+// preserved so the historical view of the workout is frozen in time.
+function withSnapshotIfPossible(
+  log: WorkoutLog,
+  settings: Settings
+): WorkoutLog {
+  if (log.templateSnapshot) return log;
+  const tpl = findTemplateById(settings, log.templateId);
+  if (!tpl) return log;
+  return { ...log, templateSnapshot: snapshotTemplate(tpl) };
 }
 
 function recomputeFoodTotals(
@@ -385,13 +450,24 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => {
       const existing = prev.workoutLogs[date];
       if (existing && existing.templateId === templateId) return prev;
+      // When the user changes the template for a date that already has a
+      // commit, drop the old snapshot — the new template is a different
+      // workout and we will snapshot it lazily on the next commit.
+      const next: WorkoutLog = existing
+        ? {
+            ...existing,
+            templateId,
+            templateSnapshot:
+              existing.templateId === templateId
+                ? existing.templateSnapshot
+                : undefined,
+          }
+        : { date, templateId, entries: {} };
       return {
         ...prev,
         workoutLogs: {
           ...prev.workoutLogs,
-          [date]: existing
-            ? { ...existing, templateId }
-            : { date, templateId, entries: {} },
+          [date]: next,
         },
       };
     });
@@ -404,12 +480,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const nextEntries = { ...base.entries };
         if (sets.length === 0) delete nextEntries[exerciseId];
         else nextEntries[exerciseId] = sets;
+        const next = withSnapshotIfPossible(
+          { ...base, entries: nextEntries },
+          prev.settings
+        );
         return {
           ...prev,
-          workoutLogs: {
-            ...prev.workoutLogs,
-            [date]: { ...base, entries: nextEntries },
-          },
+          workoutLogs: { ...prev.workoutLogs, [date]: next },
         };
       });
     },
@@ -419,12 +496,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const setRecovery = useCallback((date: string, recovery: Recovery) => {
     setState((prev) => {
       const base = baseLogFor(prev, date);
+      const next = withSnapshotIfPossible(
+        { ...base, recovery },
+        prev.settings
+      );
       return {
         ...prev,
-        workoutLogs: {
-          ...prev.workoutLogs,
-          [date]: { ...base, recovery },
-        },
+        workoutLogs: { ...prev.workoutLogs, [date]: next },
       };
     });
   }, []);
@@ -432,12 +510,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const setDidOptional = useCallback((date: string, didOptional: boolean) => {
     setState((prev) => {
       const base = baseLogFor(prev, date);
+      const next = withSnapshotIfPossible(
+        { ...base, didOptional },
+        prev.settings
+      );
       return {
         ...prev,
-        workoutLogs: {
-          ...prev.workoutLogs,
-          [date]: { ...base, didOptional },
-        },
+        workoutLogs: { ...prev.workoutLogs, [date]: next },
       };
     });
   }, []);
@@ -445,12 +524,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const markRestComplete = useCallback((date: string, completed: boolean) => {
     setState((prev) => {
       const base = baseLogFor(prev, date);
+      const next = withSnapshotIfPossible(
+        { ...base, completedRest: completed },
+        prev.settings
+      );
       return {
         ...prev,
-        workoutLogs: {
-          ...prev.workoutLogs,
-          [date]: { ...base, completedRest: completed },
-        },
+        workoutLogs: { ...prev.workoutLogs, [date]: next },
       };
     });
   }, []);

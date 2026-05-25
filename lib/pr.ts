@@ -1,5 +1,47 @@
-import type { AppState, SetEntry, TemplateExercise, WorkoutLog } from "./types";
-import { exerciseIdGroup } from "./exercise-aliases";
+import type {
+  AppState,
+  LoadDirection,
+  SetEntry,
+  Settings,
+  TemplateExercise,
+  WorkoutLog,
+} from "./types";
+import { exerciseIdGroup, resolveExerciseId } from "./exercise-aliases";
+
+// "normal" — higher weight is better (default). "assistance" — lower
+// weight is better, because the logged value represents how much the
+// machine is taking off you (assisted dips, assisted pulldown).
+export type Direction = LoadDirection;
+
+// Resolve the effective load direction for an exercise. Priority:
+//   1) Settings-level override (`settings.exerciseLoadDirection[id]`) so a
+//      user can flag any exercise as assistance-load without editing
+//      templates. Also checked under the canonical alias id so it covers
+//      the whole group (ez-bar-curl → barbell-curl, etc.).
+//   2) The per-exercise `loadDirection` field on the template.
+//   3) Variant string containing "assist" — chosen because the default
+//      templates have ambiguous names like "Assisted Dips / Tricep Dips"
+//      that could be either depending on what the user actually did. Let
+//      the variant tag the user picked decide.
+// Otherwise "normal" (higher weight = better).
+export function loadDirectionFor(
+  exerciseId: string,
+  options?: {
+    exercise?: Partial<Pick<TemplateExercise, "name" | "loadDirection">>;
+    variant?: string;
+    settings?: Pick<Settings, "exerciseLoadDirection">;
+  }
+): Direction {
+  const map = options?.settings?.exerciseLoadDirection;
+  const override =
+    map?.[exerciseId] ?? map?.[resolveExerciseId(exerciseId)];
+  if (override) return override;
+  const fromTemplate = options?.exercise?.loadDirection;
+  if (fromTemplate) return fromTemplate;
+  const variant = (options?.variant ?? "").toLowerCase();
+  if (variant.includes("assist")) return "assistance";
+  return "normal";
+}
 
 export function epley1RM(set: SetEntry): number {
   if (!Number.isFinite(set.weight) || !Number.isFinite(set.reps)) return 0;
@@ -12,19 +54,27 @@ function setVolume(s: SetEntry): number {
 }
 
 // Best set in a list, ranked by estimated 1RM, then weight, then reps.
-export function bestSet(sets: SetEntry[]): SetEntry | null {
+// For assistance-load exercises we invert the ranking — fewer kg of
+// assistance is the real progress.
+export function bestSet(
+  sets: SetEntry[],
+  direction: Direction = "normal"
+): SetEntry | null {
   let best: SetEntry | null = null;
+  const weightBetter = (a: number, b: number) =>
+    direction === "assistance" ? a < b : a > b;
+  // For assisted lifts, more reps at LESS assistance is what we want.
+  // We score each set as (weight, reps) and pick the one where weight
+  // beats the current best (per direction), tie-broken by reps.
   for (const s of sets) {
     if (!best) {
       best = s;
       continue;
     }
-    const a = epley1RM(s);
-    const b = epley1RM(best);
-    if (a > b) best = s;
-    else if (a === b) {
-      if (s.weight > best.weight) best = s;
-      else if (s.weight === best.weight && s.reps > best.reps) best = s;
+    if (weightBetter(s.weight, best.weight)) {
+      best = s;
+    } else if (s.weight === best.weight && s.reps > best.reps) {
+      best = s;
     }
   }
   return best;
@@ -45,18 +95,30 @@ export type SessionSummary = {
   bestRepsAtMaxWeight: number;
 };
 
-function summarize(date: string, sets: SetEntry[]): SessionSummary {
+function summarize(
+  date: string,
+  sets: SetEntry[],
+  direction: Direction = "normal"
+): SessionSummary {
   let totalReps = 0;
   let totalVolume = 0;
-  let maxWeight = 0;
+  // For "assistance", `maxWeight` is the BEST (lowest) assistance value
+  // used in the session, not the literal numerical max — that's the
+  // number the user thinks of as "the load I beat today".
+  let maxWeight = direction === "assistance" ? Infinity : 0;
   let best1RM = 0;
   for (const s of sets) {
     totalReps += s.reps;
     totalVolume += setVolume(s);
-    if (s.weight > maxWeight) maxWeight = s.weight;
+    if (direction === "assistance") {
+      if (s.weight < maxWeight) maxWeight = s.weight;
+    } else if (s.weight > maxWeight) {
+      maxWeight = s.weight;
+    }
     const e = epley1RM(s);
     if (e > best1RM) best1RM = e;
   }
+  if (!Number.isFinite(maxWeight)) maxWeight = 0;
   let bestRepsAtMaxWeight = 0;
   for (const s of sets) {
     if (s.weight === maxWeight && s.reps > bestRepsAtMaxWeight) {
@@ -71,7 +133,7 @@ function summarize(date: string, sets: SetEntry[]): SessionSummary {
     totalReps,
     totalVolume,
     maxWeight,
-    bestSet: bestSet(sets),
+    bestSet: bestSet(sets, direction),
     best1RM,
     bestRepsAtMaxWeight,
   };
@@ -91,7 +153,8 @@ export function normalizeVariant(v: string | undefined): string {
 export function exerciseHistory(
   state: AppState,
   exerciseId: string,
-  variant?: string
+  variant?: string,
+  direction: Direction = "normal"
 ): SessionSummary[] {
   const ids = exerciseIdGroup(exerciseId);
   const wantVariant = variant != null ? normalizeVariant(variant) : null;
@@ -111,7 +174,7 @@ export function exerciseHistory(
       }
     }
     if (combined.length === 0) continue;
-    out.push(summarize(d, combined));
+    out.push(summarize(d, combined, direction));
   }
   return out;
 }
@@ -125,17 +188,24 @@ export type AllTimeBests = {
   repsAtWeight: Map<number, number>;
 };
 
-export function allTimeBests(sessions: SessionSummary[]): AllTimeBests {
+export function allTimeBests(
+  sessions: SessionSummary[],
+  direction: Direction = "normal"
+): AllTimeBests {
   const repsAtWeight = new Map<number, number>();
-  let maxWeight = 0;
+  // `maxWeight` semantically means "the best weight ever lifted". For
+  // assistance loads the best is the LOWEST weight (least machine help).
+  let maxWeight = direction === "assistance" ? Infinity : 0;
   let best1RM = 0;
   let bestVolume = 0;
   let bestRepsAtMaxWeight = 0;
+  const isBetterWeight = (a: number, b: number) =>
+    direction === "assistance" ? a < b : a > b;
   for (const s of sessions) {
     if (s.totalVolume > bestVolume) bestVolume = s.totalVolume;
     if (s.best1RM > best1RM) best1RM = s.best1RM;
     for (const set of s.sets) {
-      if (set.weight > maxWeight) {
+      if (isBetterWeight(set.weight, maxWeight)) {
         maxWeight = set.weight;
         bestRepsAtMaxWeight = set.reps;
       } else if (set.weight === maxWeight && set.reps > bestRepsAtMaxWeight) {
@@ -145,6 +215,7 @@ export function allTimeBests(sessions: SessionSummary[]): AllTimeBests {
       if (set.reps > prev) repsAtWeight.set(set.weight, set.reps);
     }
   }
+  if (!Number.isFinite(maxWeight)) maxWeight = 0;
   return {
     maxWeight,
     best1RM,
@@ -165,24 +236,27 @@ export type PRFlags = {
 // Computes the cumulative bests across all sessions strictly BEFORE `date`,
 // then compares the session on `date` against them. When `variant` is
 // supplied, the comparison is scoped to that variant so swapping machines
-// doesn't blank out hard-earned PRs.
+// doesn't blank out hard-earned PRs. `direction` flips the weight PR
+// comparison for assistance-load exercises so lowering assistance counts
+// as progress.
 export function sessionPRs(
   state: AppState,
   exerciseId: string,
   date: string,
-  variant?: string
+  variant?: string,
+  direction: Direction = "normal"
 ): {
   today: SessionSummary | null;
   previous: SessionSummary | null;
   flags: PRFlags;
   bestsBefore: AllTimeBests;
 } {
-  const history = exerciseHistory(state, exerciseId, variant);
+  const history = exerciseHistory(state, exerciseId, variant, direction);
   const past = history.filter((s) => s.date < date);
   const todaySessions = history.filter((s) => s.date === date);
   const today = todaySessions[0] ?? null;
   const previous = past.length > 0 ? past[past.length - 1] : null;
-  const bests = allTimeBests(past);
+  const bests = allTimeBests(past, direction);
   const flags: PRFlags = {
     isAnyPR: false,
     weightPR: false,
@@ -191,7 +265,12 @@ export function sessionPRs(
     volumePR: false,
   };
   if (today) {
-    if (today.maxWeight > bests.maxWeight + 1e-6) flags.weightPR = true;
+    // Weight PR direction: assistance => lower than best is better.
+    const beatsWeight =
+      direction === "assistance"
+        ? past.length > 0 && today.maxWeight < bests.maxWeight - 1e-6
+        : today.maxWeight > bests.maxWeight + 1e-6;
+    if (beatsWeight) flags.weightPR = true;
     if (today.best1RM > bests.best1RM + 1e-6) flags.e1rmPR = true;
     if (today.totalVolume > bests.bestVolume + 1e-6) flags.volumePR = true;
     // Rep PR at a previously used weight: any set today beat the previous

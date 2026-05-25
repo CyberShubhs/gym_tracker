@@ -11,6 +11,8 @@ export type Equipment =
   | "physio"
   | "cardio";
 
+export type LoadDirection = "normal" | "assistance";
+
 export type TemplateExercise = {
   id: string;
   name: string;
@@ -19,6 +21,11 @@ export type TemplateExercise = {
   repsHigh: number;
   notes?: string;
   equipment?: Equipment;
+  // "normal" (default) treats higher weight as progress.
+  // "assistance" treats lower (assistance) weight as progress — for
+  // assisted dips / pull-ups where the logged value represents how much
+  // weight the machine takes off you.
+  loadDirection?: LoadDirection;
 };
 
 export type WorkoutTemplate = {
@@ -39,6 +46,23 @@ export type SetEntry = {
   variant?: string;
 };
 
+// Snapshot of the template and exercise definitions that were in effect when
+// a workout log was first committed. Stored alongside the log so editing
+// the template in Settings (rename, exercise add/remove, rep range tweak)
+// never silently rewrites how an older session is displayed in History or
+// reopened in Workout. Old logs without a snapshot fall back to current
+// templates + LEGACY_EXERCISE_NAMES, preserving full backwards-compat.
+export type WorkoutTemplateSnapshot = {
+  id: string;
+  name: string;
+  category: Category;
+  focus?: string;
+  exercises: TemplateExercise[];
+  // Filled when the snapshot is first written. Useful for forensics — not
+  // surfaced in the UI.
+  capturedAt?: string;
+};
+
 export type WorkoutLog = {
   date: string;
   templateId: string;
@@ -46,6 +70,9 @@ export type WorkoutLog = {
   recovery?: Recovery;
   didOptional?: boolean;
   completedRest?: boolean;
+  // Immutable snapshot — see WorkoutTemplateSnapshot above. Optional on read
+  // so logs predating this field still load.
+  templateSnapshot?: WorkoutTemplateSnapshot;
 };
 
 export type FoodEntrySource = "preset" | "custom" | "manual" | "recipe";
@@ -178,6 +205,17 @@ export type Settings = {
   // profile. The seed only runs when this flag is missing AND the user has
   // zero leg templates — so deleting a default doesn't bring it back.
   legTemplatesSeededVersion?: number;
+  // Set to the current TEMPLATES_VERSION the moment a profile's
+  // templates+schedule pass through migration successfully OR a brand-new
+  // profile is created blank. While this is missing, the store treats the
+  // state as legacy and may re-seed defaults. While this is >= the current
+  // version, an intentional empty `templates: []` is left alone (so new
+  // profiles do not get the default starter plan poured back in).
+  userTemplatesSeededVersion?: number;
+  // Per-exercise-id override for load direction. Takes precedence over
+  // the per-template `exercise.loadDirection` so the user can flag an
+  // exercise as assistance-load without editing the template.
+  exerciseLoadDirection?: Record<string, LoadDirection>;
   // Per-exercise: which machine/equipment variant the user picked last,
   // applied to new sets. Default if missing.
   activeVariantByExercise?: Record<string, string>;
