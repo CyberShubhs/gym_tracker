@@ -253,71 +253,89 @@ export function ExerciseCard({
 
   return (
     <Card className="border-border/70">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-start justify-between gap-3 text-base">
-          <span className="flex min-w-0 flex-1 flex-col gap-2">
-            <a
-              href={getExerciseTutorialUrl(exercise.name)}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="group/title inline-flex w-fit items-center gap-1 break-words text-lg font-semibold leading-tight underline-offset-4 hover:underline focus-visible:underline sm:text-xl"
-              aria-label={`Open tutorial for ${exercise.name}`}
-              title="Open how-to video"
-            >
-              <span>{exercise.name}</span>
-              <ArrowUpRight className="h-4 w-4 shrink-0 opacity-60 transition-opacity group-hover/title:opacity-100" />
-            </a>
-            <span className="flex flex-wrap items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider",
-                  EQUIPMENT_TONE[equipment]
-                )}
-              >
-                {EQUIPMENT_LABEL[equipment]}
-              </span>
-              <span className="rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-foreground/85">
-                Target {exercise.sets}×{repsTarget}
-              </span>
-              {lastSummary && (
-                <span className="rounded-md border border-border/40 bg-card/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Last {lastSummary} · {daysAgo(last!.date)}
-                </span>
-              )}
-            </span>
-            <VariantPicker
-              exerciseId={exercise.id}
-              activeVariant={activeVariant}
-              activeLabel={variantLabel}
-              options={variantOptions}
-              customLabels={customVariants?.[exercise.id] ?? []}
-              onSelect={onVariantChange}
-              onAddCustom={(label) => addCustomVariant(exercise.id, label)}
-              onRemoveCustom={(label) =>
-                removeCustomVariant(exercise.id, label)
-              }
+      <CardHeader className="gap-2 pb-3">
+        {/* Row 1 — title fills the row; action icons sit flush right. The
+            previous two-column layout left a tall blank gap on the right
+            when there were no PR badges (most days). Going vertical lets
+            the title use the full width and pulls the action cluster
+            into a single line. */}
+        <CardTitle className="flex items-start justify-between gap-2 text-base">
+          <a
+            href={getExerciseTutorialUrl(exercise.name)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="group/title inline-flex min-w-0 flex-1 items-start gap-1 break-words text-lg font-semibold leading-tight underline-offset-4 hover:underline focus-visible:underline sm:text-xl"
+            aria-label={`Open tutorial for ${exercise.name}`}
+            title="Open how-to video"
+          >
+            <span className="min-w-0 flex-1">{exercise.name}</span>
+            <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 opacity-60 transition-opacity group-hover/title:opacity-100" />
+          </a>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <TrainingGuide exercise={exercise} variantLabel={variantLabel} />
+            <ExercisePRDetail
+              exercise={exercise}
+              date={date}
+              unit={unit}
+              variant={activeVariant}
             />
-          </span>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <PRBadges flags={flags} />
-            <div className="flex items-center gap-1">
-              <TrainingGuide exercise={exercise} variantLabel={variantLabel} />
-              <PrLadder
-                exerciseId={exercise.id}
-                beforeDate={date}
-                unit={unit}
-                variant={activeVariant}
-              />
-              <ExercisePRDetail
-                exercise={exercise}
-                date={date}
-                unit={unit}
-                variant={activeVariant}
-              />
-            </div>
           </div>
         </CardTitle>
+
+        {/* Row 2 — compact stat strip. Equipment, target, last session
+            and PR-ladder trend share a single wrapping row so the empty
+            space that used to sit beside the title is now filled with
+            information the lifter actually wants mid-set. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+              EQUIPMENT_TONE[equipment]
+            )}
+          >
+            {EQUIPMENT_LABEL[equipment]}
+          </span>
+          <span className="rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-foreground/85">
+            Target {exercise.sets}×{repsTarget}
+          </span>
+          {lastSummary && (
+            <span className="rounded-md border border-border/40 bg-card/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              Last {lastSummary} · {daysAgo(last!.date)}
+            </span>
+          )}
+          <span className="ml-auto flex items-center">
+            <PrLadder
+              exerciseId={exercise.id}
+              beforeDate={date}
+              unit={unit}
+              variant={activeVariant}
+            />
+          </span>
+        </div>
+
+        {/* Row 3 — variant picker stays on its own row so longer labels
+            (e.g. "Technogym Pure Strength") don't truncate. */}
+        <VariantPicker
+          exerciseId={exercise.id}
+          activeVariant={activeVariant}
+          activeLabel={variantLabel}
+          options={variantOptions}
+          customLabels={customVariants?.[exercise.id] ?? []}
+          onSelect={onVariantChange}
+          onAddCustom={(label) => addCustomVariant(exercise.id, label)}
+          onRemoveCustom={(label) =>
+            removeCustomVariant(exercise.id, label)
+          }
+        />
+
+        {/* Row 4 — PR badges only render when there's at least one PR
+            today, so this row collapses cleanly on a typical session. */}
+        {flags.isAnyPR && (
+          <div className="flex flex-wrap items-center gap-1">
+            <PRBadges flags={flags} />
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_1.75rem] items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">

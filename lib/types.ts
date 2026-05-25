@@ -226,6 +226,17 @@ export type Settings = {
   templatesVersion?: number;
   cycle?: string[];
   cycleAnchor?: string;
+  // Date-scoped history of (cycle, anchor) pairs. Each entry takes effect
+  // for dates >= effectiveFrom and remains in effect until the next entry.
+  // Picking a template on date D appends/overwrites the entry at D so
+  // future planned dates shift, while dates before D continue to resolve
+  // against earlier entries — past planned days never silently change.
+  cycleSegments?: Array<{
+    effectiveFrom: string;
+    cycle: string[];
+    anchor: string;
+    createdAt?: string;
+  }>;
   customFoods?: CustomFood[];
   foodOverrides?: Record<string, FoodOverride>;
   recipes?: Recipe[];

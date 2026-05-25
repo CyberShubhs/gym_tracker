@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { RecoveryCard } from "@/components/recovery-card";
 import { SaveIndicator } from "@/components/save-indicator";
 import { DateNav } from "@/components/date-nav";
-import { plannedTemplate } from "@/lib/cycle";
+import { plannedTemplate, shiftFutureCycleTo } from "@/lib/cycle";
 import { useRestTimer } from "@/components/rest-timer";
 import { uidStorageSuffix } from "@/lib/uid-client";
 import type { TemplateExercise, WorkoutTemplate } from "@/lib/types";
@@ -32,7 +32,8 @@ function legPickKey(): string {
 }
 
 export default function WorkoutPage() {
-  const { hydrated, state, ensureWorkoutLog, markRestComplete } = useStore();
+  const { hydrated, state, ensureWorkoutLog, markRestComplete, updateSettings } =
+    useStore();
   const [date, setDate] = useState<string>(() => todayISO());
   const [mode, setMode] = useState<Mode>("upper");
   const { start: startRest, active: restActive } = useRestTimer();
@@ -134,12 +135,21 @@ export default function WorkoutPage() {
     isOptionalDay && log?.didOptional === false && mode === "upper";
   const showWorkout = !isRestDay && !declinedOptional;
 
-  // Pick a template for THIS date only. We deliberately do NOT shift the
-  // weekday cycle anymore — picking a non-rest workout on Sunday should
-  // only affect Sunday, not silently re-map Monday→Tuesday→… as the old
-  // shiftCycleTo path used to do.
+  // Pick a template for THIS date and let future dates follow the cycle
+  // from here. `shiftFutureCycleTo` appends a dated segment that only
+  // governs planning for `date` and dates AFTER `date` — past planned
+  // days resolve against earlier segments / the legacy global cycle and
+  // are never silently rewritten. We still call `ensureWorkoutLog` so
+  // the picked date shows the new template immediately, even on a Rest
+  // day like Sunday 2026-05-24 (i.e. without depending on the cycle
+  // segment alone, which would otherwise need a re-render). For
+  // templates that aren't part of the active cycle we fall back to a
+  // date-only log change — the cycle is left alone so future dates keep
+  // their existing plan.
   const pickUpperTemplate = (id: string) => {
     ensureWorkoutLog(date, id);
+    const patch = shiftFutureCycleTo(date, id, state.settings);
+    if (patch) updateSettings(patch);
   };
 
   const pickLegTemplate = (id: string) => {
