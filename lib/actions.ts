@@ -243,6 +243,7 @@ function emptyAppState(): AppState {
     workoutLogs: {},
     foodLogs: {},
     weightLogs: {},
+    appleHealthDaily: {},
   };
 }
 
@@ -274,6 +275,9 @@ export async function loadState(): Promise<LoadedState> {
       workoutLogs: data.workoutLogs ?? {},
       foodLogs: data.foodLogs ?? {},
       weightLogs: data.weightLogs ?? {},
+      // Preserve Apple Health daily snapshots if present; old rows without
+      // this field load as an empty map.
+      appleHealthDaily: data.appleHealthDaily ?? {},
     },
   };
 }

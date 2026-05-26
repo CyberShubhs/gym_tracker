@@ -248,9 +248,19 @@ export type Settings = {
   lifestyleFactor?: number;
 };
 
+export type AppleHealthDailyEntry = {
+  source: "apple_shortcuts" | string;
+  steps: number;
+  activeEnergyKcal: number;
+  syncedAt: string;
+};
+
 export type AppState = {
   settings: Settings;
   workoutLogs: Record<string, WorkoutLog>;
   foodLogs: Record<string, FoodLog>;
   weightLogs: Record<string, WeightLog>;
+  // Apple Health daily snapshots, keyed by yyyy-MM-dd. Optional so older
+  // profiles, exports, and backup blobs continue to load without migration.
+  appleHealthDaily?: Record<string, AppleHealthDailyEntry>;
 };

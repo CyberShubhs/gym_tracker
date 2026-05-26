@@ -72,6 +72,7 @@ export function DataIO() {
         workoutLogs: parsed.workoutLogs ?? {},
         foodLogs: parsed.foodLogs ?? {},
         weightLogs: parsed.weightLogs ?? {},
+        appleHealthDaily: parsed.appleHealthDaily ?? {},
       };
       setPendingImport(merged);
     } catch {

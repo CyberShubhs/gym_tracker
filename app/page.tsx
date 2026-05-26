@@ -3,12 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   ArrowRight,
   Beef,
   CalendarDays,
   ChevronRight,
+  Clock,
   Droplets,
   Flame,
+  Footprints,
   Leaf,
   Scale,
   Target,
@@ -35,6 +38,20 @@ import {
 } from "@/lib/progress";
 import { plannedTemplate } from "@/lib/cycle";
 import { computeAge, computeMaintenance } from "@/lib/profile";
+
+const APPLE_HEALTH_STEP_GOAL = 10_000;
+const APPLE_HEALTH_ACTIVE_KCAL_GOAL = 500;
+
+function formatAppleHealthSyncTime(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  // Compact local time like "Synced 10:42 PM"
+  return `Synced ${d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
+}
 
 export default function HomePage() {
   const { hydrated, state } = useStore();
@@ -67,6 +84,15 @@ export default function HomePage() {
   );
   const log = state.workoutLogs[date];
   const foodLog = state.foodLogs[date];
+  const appleHealth = state.appleHealthDaily?.[date];
+  const stepsValue = appleHealth?.steps ?? 0;
+  const activeKcalValue = appleHealth?.activeEnergyKcal ?? 0;
+  const stepsPct = Math.min(100, (stepsValue / APPLE_HEALTH_STEP_GOAL) * 100);
+  const kcalPct = Math.min(
+    100,
+    (activeKcalValue / APPLE_HEALTH_ACTIVE_KCAL_GOAL) * 100
+  );
+  const lastSyncedLabel = formatAppleHealthSyncTime(appleHealth?.syncedAt);
   const ws = workoutStreak(state, date);
   const fs = foodStreak(state, date);
   const wFlags = lastNDayFlags(state, date, 7, "workout");
@@ -199,6 +225,44 @@ export default function HomePage() {
           </div>
         </Card>
       </Link>
+
+      {/* Apple Health — compact daily activity */}
+      {appleHealth ? (
+        <div className="grid grid-cols-2 gap-2">
+          <AppleHealthMini
+            icon={<Footprints className="h-3.5 w-3.5 text-sky-400" />}
+            label="Steps"
+            value={stepsValue.toLocaleString()}
+            unit=""
+            progress={stepsPct}
+            progressColor="bg-sky-500"
+            sub={`${stepsValue.toLocaleString()} / ${APPLE_HEALTH_STEP_GOAL.toLocaleString()} steps`}
+            footnote={lastSyncedLabel}
+          />
+          <AppleHealthMini
+            icon={<Activity className="h-3.5 w-3.5 text-pink-400" />}
+            label="Active kcal"
+            value={Math.round(activeKcalValue).toLocaleString()}
+            unit="kcal"
+            progress={kcalPct}
+            progressColor="bg-pink-500"
+            sub={`${Math.round(activeKcalValue)} / ${APPLE_HEALTH_ACTIVE_KCAL_GOAL} kcal`}
+            footnote={lastSyncedLabel}
+          />
+        </div>
+      ) : (
+        <Card className="border-border/70">
+          <div className="flex items-center justify-between gap-3 px-4">
+            <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <Footprints className="h-3.5 w-3.5 text-sky-400" />
+              Apple Health
+            </span>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              Not synced yet
+            </span>
+          </div>
+        </Card>
+      )}
 
       {/* Calories + Protein primary nutrition cards */}
       <div className="grid grid-cols-2 gap-2">
@@ -404,6 +468,63 @@ function StatCard({
         </div>
       </Card>
     </Link>
+  );
+}
+
+function AppleHealthMini({
+  icon,
+  label,
+  value,
+  unit,
+  sub,
+  footnote,
+  progress,
+  progressColor,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  unit?: string;
+  sub?: string;
+  footnote?: string | null;
+  progress: number;
+  progressColor: string;
+}) {
+  return (
+    <Card className="border-border/70">
+      <div className="space-y-1.5 px-4">
+        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          {icon}
+          {label}
+        </span>
+        <p className="font-mono text-2xl font-semibold leading-none tabular-nums">
+          {value}
+          {unit && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground">
+              {unit}
+            </span>
+          )}
+        </p>
+        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              progressColor
+            )}
+            style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+          />
+        </div>
+        {sub && (
+          <p className="font-mono text-[10px] text-muted-foreground">{sub}</p>
+        )}
+        {footnote && (
+          <p className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground/80">
+            <Clock className="h-3 w-3" />
+            {footnote}
+          </p>
+        )}
+      </div>
+    </Card>
   );
 }
 

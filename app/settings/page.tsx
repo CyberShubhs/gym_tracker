@@ -33,6 +33,7 @@ import type {
 import { cn, todayISO } from "@/lib/utils";
 import { DataIO } from "@/components/data-io";
 import { BackupPanel } from "@/components/backup-panel";
+import { AppleHealthSyncPanel } from "@/components/apple-health-sync-panel";
 import { HardcoreToggle } from "@/components/hardcore-toggle";
 import {
   LIFESTYLE_OPTIONS,
@@ -389,6 +390,14 @@ export default function SettingsPage() {
         summary="Server-side snapshots + manual export"
       >
         <BackupPanel />
+      </SettingsSection>
+
+      <SettingsSection
+        title="Apple Health Sync"
+        description="Daily steps and active calories from an iPhone Shortcut. Token-protected and scoped to one profile."
+        summary="POST endpoint + iPhone Shortcut help"
+      >
+        <AppleHealthSyncPanel />
       </SettingsSection>
 
       <SettingsSection

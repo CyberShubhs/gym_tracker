@@ -148,6 +148,7 @@ const INITIAL_STATE: AppState = {
   workoutLogs: {},
   foodLogs: {},
   weightLogs: {},
+  appleHealthDaily: {},
 };
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -394,6 +395,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         workoutLogs: cached.state.workoutLogs ?? {},
         foodLogs: cached.state.foodLogs ?? {},
         weightLogs: cached.state.weightLogs ?? {},
+        appleHealthDaily: cached.state.appleHealthDaily ?? {},
       });
     } else {
       // No cache for this user — start from defaults so a new profile
@@ -407,6 +409,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const migrated: AppState = {
           ...server,
           settings: migrateSettings(server.settings),
+          appleHealthDaily: server.appleHealthDaily ?? {},
         };
         activeUidRef.current = userId;
         setState(migrated);
