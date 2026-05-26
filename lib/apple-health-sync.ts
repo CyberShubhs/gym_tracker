@@ -13,11 +13,21 @@ import type {
 export type AppleHealthSyncPayload = {
   profileName?: unknown;
   profileId?: unknown;
+  // Canonical key. Additional Shortcut-friendly aliases (setDate,
+  // formattedDate, Date) are tolerated below — see DATE_KEYS.
   date?: unknown;
+  setDate?: unknown;
+  formattedDate?: unknown;
+  Date?: unknown;
   source?: unknown;
   steps?: unknown;
   activeEnergyKcal?: unknown;
 };
+
+// Order matters: earlier keys win when more than one is present, so the
+// canonical `date` always takes precedence over Shortcut aliases.
+const DATE_KEYS = ["date", "setDate", "formattedDate", "Date"] as const;
+const DATE_KEYS_LIST = DATE_KEYS.join(", ");
 
 export type AppleHealthSyncErrorCode =
   | "invalid_payload"
@@ -40,7 +50,80 @@ export type AppleHealthSyncResult = {
   stored: { steps: number; activeEnergyKcal: number };
 };
 
+export type NormalizedAppleHealthSync = {
+  profileId: string | null;
+  profileName: string | null;
+  date: string;
+  source: string;
+  steps: number;
+  activeEnergyKcal: number;
+};
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function pickDateFromPayload(payload: AppleHealthSyncPayload): string | null {
+  for (const key of DATE_KEYS) {
+    const raw = (payload as Record<string, unknown>)[key];
+    const str = trimmedString(raw);
+    if (str) return str;
+  }
+  return null;
+}
+
+// Pure payload normalizer — no DB access. Exported so it can be unit-tested
+// in isolation (see scripts/apple-health-sync-test.mjs). On invalid input
+// it throws AppleHealthSyncError with code "invalid_payload".
+export function normalizeAppleHealthSyncPayload(
+  payload: AppleHealthSyncPayload
+): NormalizedAppleHealthSync {
+  const dateRaw = pickDateFromPayload(payload);
+  if (!dateRaw) {
+    throw new AppleHealthSyncError(
+      "invalid_payload",
+      `date is required (accepted keys: ${DATE_KEYS_LIST})`
+    );
+  }
+  if (!DATE_RE.test(dateRaw)) {
+    throw new AppleHealthSyncError(
+      "invalid_payload",
+      `date must match yyyy-MM-dd (accepted keys: ${DATE_KEYS_LIST})`
+    );
+  }
+  const steps = asNonNegativeFiniteNumber(payload.steps);
+  if (steps === null) {
+    throw new AppleHealthSyncError(
+      "invalid_payload",
+      "steps must be a finite non-negative number"
+    );
+  }
+  const activeEnergyKcal = asNonNegativeFiniteNumber(payload.activeEnergyKcal);
+  if (activeEnergyKcal === null) {
+    throw new AppleHealthSyncError(
+      "invalid_payload",
+      "activeEnergyKcal must be a finite non-negative number"
+    );
+  }
+  const sourceRaw = trimmedString(payload.source);
+  const source = sourceRaw ?? "apple_shortcuts";
+
+  const profileId = trimmedString(payload.profileId);
+  const profileName = trimmedString(payload.profileName);
+  if (!profileId && !profileName) {
+    throw new AppleHealthSyncError(
+      "invalid_payload",
+      "profileId or profileName is required"
+    );
+  }
+
+  return {
+    profileId,
+    profileName,
+    date: dateRaw,
+    source,
+    steps,
+    activeEnergyKcal,
+  };
+}
 
 function asNonNegativeFiniteNumber(value: unknown): number | null {
   if (value === undefined || value === null) return 0;
@@ -69,38 +152,8 @@ export async function syncAppleHealthDaily(
   payload: AppleHealthSyncPayload
 ): Promise<AppleHealthSyncResult> {
   // ---- Payload validation -------------------------------------------------
-  const date = trimmedString(payload.date);
-  if (!date || !DATE_RE.test(date)) {
-    throw new AppleHealthSyncError(
-      "invalid_payload",
-      "date is required and must match yyyy-MM-dd"
-    );
-  }
-  const steps = asNonNegativeFiniteNumber(payload.steps);
-  if (steps === null) {
-    throw new AppleHealthSyncError(
-      "invalid_payload",
-      "steps must be a finite non-negative number"
-    );
-  }
-  const activeEnergyKcal = asNonNegativeFiniteNumber(payload.activeEnergyKcal);
-  if (activeEnergyKcal === null) {
-    throw new AppleHealthSyncError(
-      "invalid_payload",
-      "activeEnergyKcal must be a finite non-negative number"
-    );
-  }
-  const sourceRaw = trimmedString(payload.source);
-  const source = sourceRaw ?? "apple_shortcuts";
-
-  const profileId = trimmedString(payload.profileId);
-  const profileName = trimmedString(payload.profileName);
-  if (!profileId && !profileName) {
-    throw new AppleHealthSyncError(
-      "invalid_payload",
-      "profileId or profileName is required"
-    );
-  }
+  const { profileId, profileName, date, source, steps, activeEnergyKcal } =
+    normalizeAppleHealthSyncPayload(payload);
 
   // ---- Resolve target profile --------------------------------------------
   await ensureSchema();
