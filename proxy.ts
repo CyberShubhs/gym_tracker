@@ -12,6 +12,7 @@ const PUBLIC_PATHS = [
   "/apple-icon",
   "/sw.js",
   "/api/notify",
+  "/api/apple-health/sync",
 ];
 
 export function proxy(req: NextRequest) {
