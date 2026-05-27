@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -13,6 +13,7 @@ import {
   Flame,
   Footprints,
   Leaf,
+  RefreshCw,
   Scale,
   Target,
   Wheat,
@@ -54,12 +55,35 @@ function formatAppleHealthSyncTime(iso: string | undefined): string | null {
 }
 
 export default function HomePage() {
-  const { hydrated, state } = useStore();
+  const { hydrated, state, refreshAppleHealthDaily } = useStore();
   const [date, setDate] = useState<string>(() => todayISO());
+  const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
 
   useEffect(() => {
     setDate(todayISO());
   }, []);
+
+  // Quietly poll the server for the latest Apple Health daily map so a
+  // Shortcut sync flows into the open Home page within ~60s without any
+  // hard refresh. Only the appleHealthDaily slice is updated; all other
+  // local state is left alone.
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = window.setInterval(() => {
+      void refreshAppleHealthDaily();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [hydrated, refreshAppleHealthDaily]);
+
+  const handleRefreshHealth = useCallback(async () => {
+    if (isRefreshingHealth) return;
+    setIsRefreshingHealth(true);
+    try {
+      await refreshAppleHealthDaily();
+    } finally {
+      setIsRefreshingHealth(false);
+    }
+  }, [isRefreshingHealth, refreshAppleHealthDaily]);
 
   const dayOfWeek = useMemo(() => {
     const [y, m, d] = date.split("-").map(Number);
@@ -227,42 +251,58 @@ export default function HomePage() {
       </Link>
 
       {/* Apple Health — compact daily activity */}
-      {appleHealth ? (
-        <div className="grid grid-cols-2 gap-2">
-          <AppleHealthMini
-            icon={<Footprints className="h-3.5 w-3.5 text-sky-400" />}
-            label="Steps"
-            value={stepsValue.toLocaleString()}
-            unit=""
-            progress={stepsPct}
-            progressColor="bg-sky-500"
-            sub={`${stepsValue.toLocaleString()} / ${APPLE_HEALTH_STEP_GOAL.toLocaleString()} steps`}
-            footnote={lastSyncedLabel}
-          />
-          <AppleHealthMini
-            icon={<Activity className="h-3.5 w-3.5 text-pink-400" />}
-            label="Active kcal"
-            value={Math.round(activeKcalValue).toLocaleString()}
-            unit="kcal"
-            progress={kcalPct}
-            progressColor="bg-pink-500"
-            sub={`${Math.round(activeKcalValue)} / ${APPLE_HEALTH_ACTIVE_KCAL_GOAL} kcal`}
-            footnote={lastSyncedLabel}
-          />
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Footprints className="h-3 w-3 text-sky-400" />
+            Apple Health
+          </span>
+          <button
+            type="button"
+            onClick={handleRefreshHealth}
+            disabled={isRefreshingHealth}
+            aria-label="Refresh Apple Health"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw
+              className={cn(
+                "h-3 w-3",
+                isRefreshingHealth && "animate-spin"
+              )}
+            />
+          </button>
         </div>
-      ) : (
-        <Card className="border-border/70">
-          <div className="flex items-center justify-between gap-3 px-4">
-            <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              <Footprints className="h-3.5 w-3.5 text-sky-400" />
-              Apple Health
-            </span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              Not synced yet
-            </span>
+        {appleHealth ? (
+          <div className="grid grid-cols-2 gap-2">
+            <AppleHealthMini
+              icon={<Footprints className="h-3.5 w-3.5 text-sky-400" />}
+              label="Steps"
+              value={stepsValue.toLocaleString()}
+              unit=""
+              progress={stepsPct}
+              progressColor="bg-sky-500"
+              sub={`${stepsValue.toLocaleString()} / ${APPLE_HEALTH_STEP_GOAL.toLocaleString()} steps`}
+              footnote={lastSyncedLabel}
+            />
+            <AppleHealthMini
+              icon={<Activity className="h-3.5 w-3.5 text-pink-400" />}
+              label="Active kcal"
+              value={Math.round(activeKcalValue).toLocaleString()}
+              unit="kcal"
+              progress={kcalPct}
+              progressColor="bg-pink-500"
+              sub={`${Math.round(activeKcalValue)} / ${APPLE_HEALTH_ACTIVE_KCAL_GOAL} kcal`}
+              footnote={lastSyncedLabel}
+            />
           </div>
-        </Card>
-      )}
+        ) : (
+          <Card className="border-border/70">
+            <p className="px-4 text-center font-mono text-[11px] text-muted-foreground">
+              Not synced yet
+            </p>
+          </Card>
+        )}
+      </div>
 
       {/* Calories + Protein primary nutrition cards */}
       <div className="grid grid-cols-2 gap-2">

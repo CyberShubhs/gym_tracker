@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { getSql } from "./db";
-import type { AppState } from "./types";
+import type { AppState, AppleHealthDailyEntry } from "./types";
 import { BLANK_SETTINGS, DEFAULT_SETTINGS } from "./defaults";
 import {
   SESSION_COOKIE,
@@ -280,6 +280,24 @@ export async function loadState(): Promise<LoadedState> {
       appleHealthDaily: data.appleHealthDaily ?? {},
     },
   };
+}
+
+// Read-only loader for the active profile's Apple Health daily snapshots.
+// Strictly scoped to the signed-in session user — never touches other
+// profiles, never writes, never migrates, never resets. Returns {} when
+// nobody is signed in or the profile has no Apple Health data yet.
+export async function loadAppleHealthDaily(): Promise<
+  Record<string, AppleHealthDailyEntry>
+> {
+  const userId = await currentUserId();
+  if (!userId) return {};
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT data FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (rows.length === 0) return {};
+  const data = rows[0].data as Partial<AppState> | null;
+  return data?.appleHealthDaily ?? {};
 }
 
 // Compute the calendar-day key (YYYY-MM-DD) for the daily backup bucket.

@@ -11,6 +11,7 @@ import {
 } from "react";
 import type {
   AppState,
+  AppleHealthDailyEntry,
   CustomFood,
   FoodEntry,
   FoodLog,
@@ -34,7 +35,12 @@ import {
   needsTemplateMigration,
   validateTemplates,
 } from "./defaults";
-import { loadState, resetCurrentProfile, saveState } from "./actions";
+import {
+  loadAppleHealthDaily,
+  loadState,
+  resetCurrentProfile,
+  saveState,
+} from "./actions";
 import { plannedTemplate } from "./cycle";
 import { exerciseIdGroup } from "./exercise-aliases";
 
@@ -200,6 +206,7 @@ type StoreContextValue = {
   addCustomVariant: (exerciseId: string, variant: string) => void;
   removeCustomVariant: (exerciseId: string, variant: string) => void;
   resetAll: () => void;
+  refreshAppleHealthDaily: () => Promise<void>;
   lastSessionFor: (
     exerciseId: string,
     beforeDate: string,
@@ -322,6 +329,32 @@ function ensureFoodLog(prev: AppState, date: string): FoodLog {
       fatsG: 0,
     }
   );
+}
+
+// True when the two appleHealthDaily maps are structurally equal — same set
+// of date keys with identical entry fields. Cheap field-by-field check so a
+// no-op refresh never triggers a re-render or an autosave.
+function sameAppleHealth(
+  a: Record<string, AppleHealthDailyEntry> | undefined,
+  b: Record<string, AppleHealthDailyEntry>
+): boolean {
+  const aKeys = Object.keys(a ?? {}).sort();
+  const bKeys = Object.keys(b).sort();
+  if (aKeys.length !== bKeys.length) return false;
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+    const ae = (a as Record<string, AppleHealthDailyEntry>)[aKeys[i]];
+    const be = b[bKeys[i]];
+    if (
+      ae.source !== be.source ||
+      ae.steps !== be.steps ||
+      ae.activeEnergyKcal !== be.activeEnergyKcal ||
+      ae.syncedAt !== be.syncedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function readCache(): { uid: string; state: AppState } | null {
@@ -933,6 +966,38 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setSaveStatus("error"));
   }, []);
 
+  // Pulls only the Apple Health daily map from the server and merges it into
+  // local state without disturbing workout / food / weight / settings. When
+  // the fetched slice is byte-identical to what we already have, state is
+  // returned unchanged so React skips the render and the autosave loop stays
+  // quiet. When the slice did change we also splice it into lastSavedRef so
+  // the next autosave tick does not push our just-fetched snapshot straight
+  // back over a potentially-newer Shortcut write — only genuine local edits
+  // should trigger a save.
+  const refreshAppleHealthDaily = useCallback(async () => {
+    try {
+      const fresh = await loadAppleHealthDaily();
+      let changed = false;
+      setState((prev) => {
+        if (sameAppleHealth(prev.appleHealthDaily, fresh)) return prev;
+        changed = true;
+        return { ...prev, appleHealthDaily: fresh };
+      });
+      if (changed && lastSavedRef.current) {
+        try {
+          const saved = JSON.parse(lastSavedRef.current) as AppState;
+          saved.appleHealthDaily = fresh;
+          lastSavedRef.current = JSON.stringify(saved);
+        } catch {
+          // lastSavedRef was malformed; let the next real save reset it.
+        }
+      }
+    } catch {
+      // Read failures are silent — the Apple Health card simply keeps
+      // showing the last known data until the next tick.
+    }
+  }, []);
+
   const lastSessionFor = useCallback(
     (exerciseId: string, beforeDate: string, variant?: string) => {
       const ids = exerciseIdGroup(exerciseId);
@@ -999,6 +1064,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addCustomVariant,
       removeCustomVariant,
       resetAll,
+      refreshAppleHealthDaily,
       lastSessionFor,
     }),
     [
@@ -1033,6 +1099,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addCustomVariant,
       removeCustomVariant,
       resetAll,
+      refreshAppleHealthDaily,
       lastSessionFor,
     ]
   );
