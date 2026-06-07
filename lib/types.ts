@@ -130,12 +130,20 @@ export type FoodCategoryRef =
   | "egg"
   | "fat"
   | "protein"
-  | "carb";
+  | "carb"
+  | "dairy"
+  | "sauce";
 
 export type CustomFood = {
   id: string;
   name: string;
   emoji?: string;
+  // Optional locally-stored icon image (a small, square, compressed data
+  // URL) used in place of the emoji. Privacy-safe: produced entirely in the
+  // browser and persisted inside settings.customFoods, so it round-trips
+  // through JSON export/import with the rest of the profile. Kept small
+  // (≈96px JPEG) so storage and load speed are unaffected.
+  iconImageDataUrl?: string;
   unit: "g" | "ml" | "piece";
   defaultAmount: number;
   caloriesPer: number;

@@ -25,6 +25,13 @@ export const EMOJI_BY_CATEGORY: Record<FoodCategory, string[]> = {
     "🥑", "🌰", "🥜", "🫒", "🧈", "🥥", "🫛", "🧀", "🍳", "🍫",
   ],
   egg: ["🥚", "🍳", "🟡"],
+  dairy: [
+    "🧀", "🥛", "🥣", "🧈", "🍶", "🍦", "🐄", "🥥",
+  ],
+  sauce: [
+    "🥫", "🍅", "🌶️", "🍯", "🧂", "🧄", "🧅", "🫙", "🥣", "🌭",
+    "🫗", "🥜",
+  ],
 };
 
 // Drinks / extras that don't fit a single category but should be available
@@ -33,6 +40,8 @@ const EXTRA_EMOJIS = [
   "☕", "🍵", "🥤", "🧋", "🍶", "🍷", "🍺",
   "🥃", "💧", "🍯", "🍫", "🍪", "🥞", "🧇",
   "🍰", "🍦", "🥟", "🍕", "🍔", "🌮",
+  // Sauces / condiments + seasoning so they're reachable from the All tab.
+  "🧂", "🌶️", "🥫", "🧄", "🧅", "🍅", "🫙", "🫗", "🍶",
 ];
 
 export const ALL_FOOD_EMOJIS = Array.from(
@@ -56,7 +65,7 @@ export function suggestEmoji(
     [/egg/, "🥚"],
     [/yog(h)?urt|curd|dahi/, "🥣"],
     [/milk|lassi/, "🥛"],
-    [/cheese|paneer|halloumi|feta/, "🧀"],
+    [/cheese|paneer|halloumi|feta|cheddar|mozzarella|gouda|parmesan/, "🧀"],
     [/tofu|seitan|tempeh/, "🧈"],
     [/banana/, "🍌"],
     [/apple/, "🍎"],
@@ -92,6 +101,19 @@ export function suggestEmoji(
     [/peanut/, "🥜"],
     [/oil|ghee/, "🫒"],
     [/butter/, "🧈"],
+    // Sauces / condiments — keep these ahead of the generic fallbacks.
+    [/ketchup|tomato\s*sauce/, "🍅"],
+    [/mayo|mayonnaise|aioli/, "🥫"],
+    [/soy\s*sauce|tamari|teriyaki/, "🫙"],
+    [/bbq|barbe?cue/, "🍯"],
+    [/hummus/, "🫘"],
+    [/chutney/, "🥭"],
+    [/salsa/, "🍅"],
+    [/mustard/, "🌭"],
+    [/peri.?peri|piri.?piri/, "🌶️"],
+    [/sriracha|tabasco|hot\s*sauce|chilli\s*sauce|chili\s*sauce|sweet\s*chilli/, "🌶️"],
+    [/ranch|dressing|vinaigrette|dip|gravy|relish|pesto|sauce|condiment/, "🥫"],
+    [/salt|seasoning|spice/, "🧂"],
     [/coffee|espresso|latte|cappuccino|cold\s*brew/, "☕"],
     [/tea|chai|matcha/, "🍵"],
     [/water|h2o/, "💧"],
@@ -193,10 +215,10 @@ export function EmojiPicker({
           </button>
         ))}
       </div>
-      {/* TODO: photo-as-food-icon — needs image storage/upload pipeline,
-          deferred until a backend storage layer (e.g. Vercel Blob) is wired
-          up. The serialized state already lives in Postgres JSONB and would
-          balloon if we inlined base64 images. */}
+      {/* Photo-as-food-icon is available for custom foods via FoodIconField
+          (see components/food-icon.tsx). It processes the image entirely in
+          the browser into a tiny square data URL, so nothing is uploaded and
+          stored state stays small. */}
     </div>
   );
 }

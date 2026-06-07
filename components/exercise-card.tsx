@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   Check,
@@ -116,7 +116,7 @@ function draftsToEntries(drafts: Draft[], variant?: string): SetEntry[] {
     );
 }
 
-export function ExerciseCard({
+export const ExerciseCard = memo(function ExerciseCard({
   exercise,
   date,
   unit,
@@ -164,15 +164,22 @@ export function ExerciseCard({
     variant: activeVariant,
     settings: state.settings,
   });
-  const last = lastSessionFor(exercise.id, date, activeVariant);
-  const { flags } = sessionPRs(
-    state,
-    exercise.id,
-    date,
-    activeVariant,
-    direction
+  const isAssisted = direction === "assistance";
+  // Memoised so a re-render that does NOT change the underlying logs (e.g. a
+  // carousel drag frame) never re-scans the full workout history. They still
+  // recompute when today's sets actually change.
+  const last = useMemo(
+    () => lastSessionFor(exercise.id, date, activeVariant),
+    [lastSessionFor, exercise.id, date, activeVariant]
   );
-  const advice = progressionAdvice(exercise, todaySets);
+  const flags = useMemo(
+    () => sessionPRs(state, exercise.id, date, activeVariant, direction).flags,
+    [state, exercise.id, date, activeVariant, direction]
+  );
+  const advice = useMemo(
+    () => progressionAdvice(exercise, todaySets),
+    [exercise, todaySets]
+  );
 
   const updateDraft = (idx: number, patch: Partial<Draft>) => {
     setDrafts((prev) => {
@@ -296,6 +303,14 @@ export function ExerciseCard({
           >
             {EQUIPMENT_LABEL[equipment]}
           </span>
+          {isAssisted && (
+            <span
+              className="inline-flex items-center rounded-md border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-cyan-300"
+              title="Assisted movement — lower weight (less machine help) is progress."
+            >
+              Assisted
+            </span>
+          )}
           <span className="rounded-md border border-border/60 bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-foreground/85">
             Target {exercise.sets}×{repsTarget}
           </span>
@@ -338,14 +353,34 @@ export function ExerciseCard({
         )}
       </CardHeader>
       <CardContent className="space-y-3">
+        {isAssisted && (
+          <p className="-mb-1 font-mono text-[10px] leading-snug text-cyan-300/80">
+            Lower assistance is progress — log the kg the machine takes off you.
+          </p>
+        )}
         <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_minmax(0,1fr)_1.75rem] items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
           <span>Set</span>
-          <span>W ({unit})</span>
+          <span>{isAssisted ? `Assist (${unit})` : `W (${unit})`}</span>
           <span>Reps</span>
           <span />
         </div>
         {drafts.map((d, idx) => {
           const prev = last?.sets[idx];
+          const weightFilled =
+            d.weight.trim() !== "" && Number.isFinite(parseFloat(d.weight));
+          const repsVal = parseInt(d.reps, 10);
+          const repsFilled = d.reps.trim() !== "" && Number.isFinite(repsVal);
+          const isPrescribed = idx < exercise.sets;
+          // A prescribed set that reached the top of the rep range — the
+          // signal the progression engine uses, so the row turns green.
+          const hitsTop =
+            isPrescribed && repsFilled && repsVal >= exercise.repsHigh;
+          const weightTone = hitsTop
+            ? "green"
+            : weightFilled
+            ? "amber"
+            : "normal";
+          const repsTone = hitsTop ? "green" : repsFilled ? "amber" : "normal";
           return (
             <div
               key={idx}
@@ -364,7 +399,7 @@ export function ExerciseCard({
                   onChange={(e) =>
                     updateDraft(idx, { weight: e.target.value })
                   }
-                  className="pr-7 font-mono text-base"
+                  className={cn("pr-7 font-mono text-base", inputTone(weightTone))}
                 />
                 {usesPlates && parseFloat(d.weight) > 0 && (
                   <span className="absolute inset-y-0 right-1 flex items-center">
@@ -379,7 +414,7 @@ export function ExerciseCard({
                 placeholder={prev ? String(prev.reps) : "0"}
                 value={d.reps}
                 onChange={(e) => updateDraft(idx, { reps: e.target.value })}
-                className="font-mono text-base"
+                className={cn("font-mono text-base", inputTone(repsTone))}
               />
               <Button
                 variant="ghost"
@@ -445,6 +480,22 @@ export function ExerciseCard({
       </CardContent>
     </Card>
   );
+});
+
+// Per-input colour state for the weight/reps boxes:
+//   normal — empty / nothing entered yet
+//   amber  — a valid number is entered (visual confirmation it registered)
+//   green  — a prescribed set hit the top of the rep range (progression-ready)
+// Dark variants are set explicitly so the tint wins over the Input's default
+// dark:bg-input/30, and text stays readable on dark backgrounds.
+function inputTone(tone: "normal" | "amber" | "green"): string {
+  if (tone === "green") {
+    return "border-emerald-500/60 bg-emerald-500/10 text-emerald-100 placeholder:text-emerald-200/40 focus-visible:border-emerald-400 dark:bg-emerald-500/15";
+  }
+  if (tone === "amber") {
+    return "border-amber-500/60 bg-amber-500/10 text-amber-100 placeholder:text-amber-200/40 focus-visible:border-amber-400 dark:bg-amber-500/15";
+  }
+  return "";
 }
 
 function PRBadges({ flags }: { flags: PRFlags }) {

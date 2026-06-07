@@ -480,14 +480,7 @@ function CubeStage({
           transform: `rotateY(90deg) translate3d(0,0,${halfWidth}px)`,
         }}
       >
-        {right && (
-          <ExerciseCard
-            key={`right-${right.id}`}
-            exercise={right}
-            date={date}
-            unit={unit}
-          />
-        )}
+        {right && <ExercisePreview key={`right-${right.id}`} exercise={right} />}
       </div>
       <div
         aria-hidden
@@ -497,13 +490,38 @@ function CubeStage({
           transform: `rotateY(-90deg) translate3d(0,0,${halfWidth}px)`,
         }}
       >
-        {left && (
-          <ExerciseCard
-            key={`left-${left.id}`}
-            exercise={left}
-            date={date}
-            unit={unit}
-          />
+        {left && <ExercisePreview key={`left-${left.id}`} exercise={left} />}
+      </div>
+    </div>
+  );
+}
+
+// Lightweight stand-in for the side faces of the cube. The off-screen
+// neighbours used to render full ExerciseCards (each scanning the entire
+// workout history for PRs/last-session on every drag frame). They're only
+// ever seen edge-on mid-rotation, so a cheap header + skeleton rows is plenty
+// and keeps swiping smooth. The real card mounts once it becomes the front.
+function ExercisePreview({ exercise }: { exercise: TemplateExercise }) {
+  const repsTarget =
+    exercise.repsLow === exercise.repsHigh
+      ? `${exercise.repsLow}`
+      : `${exercise.repsLow}–${exercise.repsHigh}`;
+  return (
+    <div className="h-full rounded-xl border border-border/70 bg-card p-4">
+      <p className="break-words text-lg font-semibold leading-tight sm:text-xl">
+        {exercise.name}
+      </p>
+      <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Target {exercise.sets}×{repsTarget}
+      </p>
+      <div className="mt-4 space-y-2 opacity-40" aria-hidden>
+        {Array.from({ length: Math.min(Math.max(exercise.sets, 1), 4) }).map(
+          (_, i) => (
+            <div
+              key={i}
+              className="h-8 rounded-lg border border-border/50 bg-muted/20"
+            />
+          )
         )}
       </div>
     </div>

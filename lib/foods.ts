@@ -4,7 +4,9 @@ export type FoodCategory =
   | "egg"
   | "fat"
   | "protein"
-  | "carb";
+  | "carb"
+  | "dairy"
+  | "sauce";
 
 export type FoodUnit = "g" | "ml" | "piece";
 
@@ -31,6 +33,8 @@ export type CustomFood = {
   id: string;
   name: string;
   emoji?: string;
+  // See lib/types.ts CustomFood — small, browser-generated icon image.
+  iconImageDataUrl?: string;
   unit: FoodUnit;
   defaultAmount: number;
   caloriesPer: number;
@@ -48,13 +52,20 @@ export const CATEGORY_LABEL: Record<FoodCategory, string> = {
   fat: "Fats",
   protein: "Protein",
   carb: "Carbs",
+  dairy: "Dairy",
+  sauce: "Sauces",
 };
 
+// Tab order in the food picker. Protein/Carbs first (logged most), then the
+// new Dairy and Sauces sections (easy to forget, calorie-dense), then
+// Fruit/Veg/Fats.
 export const CATEGORY_ORDER: FoodCategory[] = [
   "protein",
-  "veg",
-  "fruit",
   "carb",
+  "dairy",
+  "sauce",
+  "fruit",
+  "veg",
   "fat",
 ];
 
@@ -420,7 +431,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     fiberPer: 0,
     carbsPer: 0.062,
     fatsPer: 0.207,
-    category: "protein",
+    category: "dairy",
     source: "IFCT 2017 (paneer, full-fat cow milk)",
   },
   {
@@ -434,7 +445,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     fiberPer: 0,
     carbsPer: 0.0364,
     fatsPer: 0.0039,
-    category: "protein",
+    category: "dairy",
     source: "USDA FDC #173304 (Greek yogurt, plain, non-fat)",
   },
   {
@@ -448,7 +459,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
     fiberPer: 0,
     carbsPer: 0.048,
     fatsPer: 0.0333,
-    category: "protein",
+    category: "dairy",
     source: "USDA FDC #171265 (whole milk, 3.25 % fat) · ~1.03 g/ml",
   },
   {
@@ -537,6 +548,222 @@ export const FOOD_PRESETS: FoodPreset[] = [
     fatsPer: 1.1,
     category: "carb",
     source: "USDA FDC #172684 (whole-wheat bread, commercial, ~30 g slice)",
+  },
+
+  // Dairy (per gram unless noted). Paneer / Greek yogurt / milk also live
+  // here (their ids are unchanged for backwards-compat).
+  {
+    id: "curd-plain",
+    name: "Curd / plain yogurt",
+    emoji: "🥣",
+    unit: "g",
+    defaultAmount: 150,
+    caloriesPer: 0.61,
+    proteinPer: 0.035,
+    fiberPer: 0,
+    carbsPer: 0.047,
+    fatsPer: 0.0333,
+    category: "dairy",
+    source: "USDA FDC #170886 (whole-milk plain yogurt / dahi)",
+  },
+  {
+    id: "cottage-cheese",
+    name: "Cottage cheese (low-fat)",
+    emoji: "🧀",
+    unit: "g",
+    defaultAmount: 100,
+    caloriesPer: 0.84,
+    proteinPer: 0.11,
+    fiberPer: 0,
+    carbsPer: 0.0455,
+    fatsPer: 0.0243,
+    category: "dairy",
+    source: "USDA FDC #173417 (cottage cheese, lowfat, 2% milkfat)",
+  },
+  {
+    id: "cheese-cheddar",
+    name: "Cheese (cheddar)",
+    emoji: "🧀",
+    unit: "g",
+    defaultAmount: 30,
+    caloriesPer: 4.03,
+    proteinPer: 0.2249,
+    fiberPer: 0,
+    carbsPer: 0.0331,
+    fatsPer: 0.3314,
+    category: "dairy",
+    source: "USDA FDC #173410 (cheddar cheese)",
+  },
+
+  // Sauces / condiments. Easy to forget and surprisingly calorie-dense, so
+  // small default amounts (≈ a tbsp/tsp) keep logging realistic.
+  {
+    id: "sauce-ketchup",
+    name: "Ketchup",
+    emoji: "🍅",
+    unit: "g",
+    defaultAmount: 15,
+    caloriesPer: 1.01,
+    proteinPer: 0.0118,
+    fiberPer: 0.003,
+    carbsPer: 0.2629,
+    fatsPer: 0.001,
+    category: "sauce",
+    source: "USDA FDC #168556 (ketchup)",
+  },
+  {
+    id: "sauce-mayo",
+    name: "Mayonnaise",
+    emoji: "🥫",
+    unit: "g",
+    defaultAmount: 15,
+    caloriesPer: 6.8,
+    proteinPer: 0.01,
+    fiberPer: 0,
+    carbsPer: 0.006,
+    fatsPer: 0.75,
+    category: "sauce",
+    source: "USDA FDC #343039 (mayonnaise, regular)",
+  },
+  {
+    id: "sauce-mayo-light",
+    name: "Light mayo",
+    emoji: "🥫",
+    unit: "g",
+    defaultAmount: 15,
+    caloriesPer: 3.3,
+    proteinPer: 0.008,
+    fiberPer: 0,
+    carbsPer: 0.09,
+    fatsPer: 0.33,
+    category: "sauce",
+    source: "USDA FDC #2706393 (mayonnaise, light / reduced fat)",
+  },
+  {
+    id: "sauce-hot",
+    name: "Hot sauce",
+    emoji: "🌶️",
+    unit: "g",
+    defaultAmount: 10,
+    caloriesPer: 0.6,
+    proteinPer: 0.005,
+    fiberPer: 0.003,
+    carbsPer: 0.12,
+    fatsPer: 0.004,
+    category: "sauce",
+    source: "Generic chilli/sriracha-style hot sauce estimate",
+  },
+  {
+    id: "sauce-soy",
+    name: "Soy sauce",
+    emoji: "🫙",
+    unit: "ml",
+    defaultAmount: 15,
+    caloriesPer: 0.53,
+    proteinPer: 0.08,
+    fiberPer: 0.008,
+    carbsPer: 0.049,
+    fatsPer: 0.0006,
+    category: "sauce",
+    source: "USDA FDC #174277 (soy sauce, ~1.15 g/ml)",
+  },
+  {
+    id: "sauce-bbq",
+    name: "BBQ sauce",
+    emoji: "🍯",
+    unit: "g",
+    defaultAmount: 30,
+    caloriesPer: 1.72,
+    proteinPer: 0.008,
+    fiberPer: 0.007,
+    carbsPer: 0.408,
+    fatsPer: 0.0063,
+    category: "sauce",
+    source: "USDA FDC #170884 (barbecue sauce)",
+  },
+  {
+    id: "sauce-hummus",
+    name: "Hummus",
+    emoji: "🫘",
+    unit: "g",
+    defaultAmount: 30,
+    caloriesPer: 1.66,
+    proteinPer: 0.0758,
+    fiberPer: 0.06,
+    carbsPer: 0.1431,
+    fatsPer: 0.0986,
+    category: "sauce",
+    source: "USDA FDC #173735 (hummus, commercial)",
+  },
+  {
+    id: "sauce-chutney",
+    name: "Chutney (sweet)",
+    emoji: "🥭",
+    unit: "g",
+    defaultAmount: 20,
+    caloriesPer: 2.4,
+    proteinPer: 0.005,
+    fiberPer: 0.011,
+    carbsPer: 0.585,
+    fatsPer: 0.002,
+    category: "sauce",
+    source: "Typical mango / sweet chutney label estimate",
+  },
+  {
+    id: "sauce-salsa",
+    name: "Salsa",
+    emoji: "🍅",
+    unit: "g",
+    defaultAmount: 30,
+    caloriesPer: 0.36,
+    proteinPer: 0.0152,
+    fiberPer: 0.0152,
+    carbsPer: 0.0758,
+    fatsPer: 0.0015,
+    category: "sauce",
+    source: "USDA FDC #1102718 (salsa, ready-to-serve)",
+  },
+  {
+    id: "sauce-mustard",
+    name: "Mustard",
+    emoji: "🌭",
+    unit: "g",
+    defaultAmount: 10,
+    caloriesPer: 0.66,
+    proteinPer: 0.0374,
+    fiberPer: 0.04,
+    carbsPer: 0.058,
+    fatsPer: 0.0341,
+    category: "sauce",
+    source: "USDA FDC #168577 (mustard, prepared, yellow)",
+  },
+  {
+    id: "sauce-periperi",
+    name: "Peri-peri sauce",
+    emoji: "🌶️",
+    unit: "g",
+    defaultAmount: 15,
+    caloriesPer: 0.9,
+    proteinPer: 0.01,
+    fiberPer: 0.005,
+    carbsPer: 0.08,
+    fatsPer: 0.06,
+    category: "sauce",
+    source: "Typical peri-peri / hot garlic sauce label estimate",
+  },
+  {
+    id: "sauce-sweet-chilli",
+    name: "Sweet chilli sauce",
+    emoji: "🌶️",
+    unit: "g",
+    defaultAmount: 15,
+    caloriesPer: 2.25,
+    proteinPer: 0.006,
+    fiberPer: 0.004,
+    carbsPer: 0.55,
+    fatsPer: 0.002,
+    category: "sauce",
+    source: "Typical sweet chilli dipping sauce label estimate",
   },
 
   // Drinks (no category target — these live under My foods via search)

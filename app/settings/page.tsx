@@ -702,6 +702,7 @@ function TemplateEditor({
                     updateExercise(i, { equipment: eq })
                   }
                 />
+                <AssistanceToggle exerciseId={ex.id} />
               </div>
             ))}
             <Button
@@ -801,6 +802,49 @@ function EquipmentPicker({
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function AssistanceToggle({ exerciseId }: { exerciseId: string }) {
+  const { state, updateSettings } = useStore();
+  const map = state.settings.exerciseLoadDirection ?? {};
+  const isAssist = map[exerciseId] === "assistance";
+  const toggle = () => {
+    const next = { ...map };
+    if (isAssist) delete next[exerciseId];
+    else next[exerciseId] = "assistance";
+    updateSettings({ exerciseLoadDirection: next });
+  };
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2.5 py-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-medium">Treat weight as assistance</p>
+        <p className="font-mono text-[10px] leading-snug text-muted-foreground">
+          For assisted dips / pull-ups: lower weight (less machine help) counts
+          as progress.
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isAssist}
+        onClick={toggle}
+        className={cn(
+          "relative h-5 w-9 shrink-0 rounded-full border transition-colors",
+          isAssist
+            ? "border-cyan-500/60 bg-cyan-500/30"
+            : "border-border/60 bg-muted/40"
+        )}
+        aria-label="Treat weight as assistance"
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-foreground transition-all",
+            isAssist ? "left-[1.125rem]" : "left-0.5"
+          )}
+        />
+      </button>
     </div>
   );
 }

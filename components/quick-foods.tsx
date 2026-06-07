@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   ChefHat,
+  Droplet,
   History as HistoryIcon,
   Info,
   Pencil,
@@ -31,6 +32,7 @@ import type {
   Recipe,
 } from "@/lib/types";
 import { EmojiPicker, suggestEmoji } from "@/components/emoji-picker";
+import { FoodIcon, FoodIconField } from "@/components/food-icon";
 import {
   RecipesPanel,
   computeRecipeTotals,
@@ -63,6 +65,7 @@ type FoodLike = {
   id: string;
   name: string;
   emoji: string;
+  iconImageDataUrl?: string;
   unit: FoodUnit;
   defaultAmount: number;
   caloriesPer: number;
@@ -175,6 +178,7 @@ export function QuickFoods({ date }: { date: string }) {
         id: c.id,
         name: c.name,
         emoji: c.emoji ?? suggestEmoji(c.name, c.category),
+        iconImageDataUrl: c.iconImageDataUrl,
         unit: c.unit,
         defaultAmount: c.defaultAmount,
         caloriesPer: c.caloriesPer,
@@ -254,6 +258,37 @@ export function QuickFoods({ date }: { date: string }) {
     if (!q) return [];
     return recipes.filter((r) => r.name.toLowerCase().includes(q));
   }, [recipes, search]);
+
+  // Sauces are easy to forget and calorie-dense — surface a compact quick row
+  // so they're a single tap away without opening the Sauces tab.
+  const sauces = useMemo(
+    () => (grouped.get("sauce") ?? []).slice(0, 6),
+    [grouped]
+  );
+
+  // Distinct amounts most-recently logged for a given food (newest first),
+  // derived live from existing food logs — no new stored state, so it's
+  // fully data-safe. Powers the "recent amounts" / "copy last amount" chips.
+  const recentAmountsFor = useCallback(
+    (foodId: string): number[] => {
+      const seen = new Set<number>();
+      const out: number[] = [];
+      for (let i = 0; i < 30 && out.length < 5; i++) {
+        const log = state.foodLogs[addDays(date, -i)];
+        if (!log?.entries) continue;
+        const byRecent = [...log.entries].sort((a, b) => b.ts - a.ts);
+        for (const e of byRecent) {
+          if (e.sourceFoodId !== foodId) continue;
+          if (!Number.isFinite(e.amount) || seen.has(e.amount)) continue;
+          seen.add(e.amount);
+          out.push(e.amount);
+          if (out.length >= 5) break;
+        }
+      }
+      return out;
+    },
+    [state.foodLogs, date]
+  );
 
   const quickAdd = (food: FoodLike) => {
     addFoodEntry(date, makeEntryFromFood(food, food.defaultAmount));
@@ -413,6 +448,28 @@ export function QuickFoods({ date }: { date: string }) {
               </div>
             )}
 
+            {sauces.length > 0 && (
+              <div className="space-y-2">
+                <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <Droplet className="h-3 w-3 text-rose-400" />
+                  Sauces · easy to forget
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {sauces.map((f) => (
+                    <FoodChip
+                      key={`sauce-${f.id}`}
+                      food={f}
+                      mine={!!f.__isCustom}
+                      edited={!f.__isCustom && !!overrides[f.id]}
+                      onTap={() => quickAdd(f)}
+                      onOpenDetail={() => openDetail(f)}
+                      onEdit={() => editFood(f)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <Tabs defaultValue="protein">
               <TabsList className="w-full overflow-x-auto">
                 {CATEGORY_ORDER.map((c) => (
@@ -510,6 +567,7 @@ export function QuickFoods({ date }: { date: string }) {
               : false
           }
           source={presetSourceFor(pickedFood)}
+          recentAmounts={recentAmountsFor(pickedFood.id)}
           onClose={() => setPickedFood(null)}
           onConfirm={(amount) => {
             const isPreset =
@@ -640,7 +698,7 @@ export function QuickFoods({ date }: { date: string }) {
   );
 }
 
-function FoodChip({
+const FoodChip = memo(function FoodChip({
   food,
   onTap,
   onOpenDetail,
@@ -706,7 +764,12 @@ function FoodChip({
         aria-label={`Add ${amountLabel} ${food.name}. Long press or tap info for details.`}
       >
         <span className="flex min-w-0 items-center gap-1.5 leading-tight">
-          <span className="shrink-0 text-lg">{food.emoji ?? "🍽"}</span>
+          <FoodIcon
+            emoji={food.emoji}
+            src={food.iconImageDataUrl}
+            sizeClass="h-6 w-6"
+            textClass="text-lg"
+          />
           <span className="min-w-0 flex-1 truncate font-medium">
             {food.name}
           </span>
@@ -758,9 +821,9 @@ function FoodChip({
       </div>
     </div>
   );
-}
+});
 
-function RecipeChip({
+const RecipeChip = memo(function RecipeChip({
   recipe,
   resolver,
   onTap,
@@ -857,6 +920,53 @@ function RecipeChip({
       </div>
     </div>
   );
+});
+
+type AmountChip = { key: string; label: string; value: number; title?: string };
+
+// Render a number as a short string: up to 2 decimals, no trailing zeros.
+function formatAmount(v: number): string {
+  return String(Math.round(v * 100) / 100);
+}
+
+// Build the quick-amount chips for the food detail dialog: recently logged
+// amounts first (so "copy last amount" is one tap), then the default serving,
+// sensible per-unit presets, and half/double. Deduped and capped so the row
+// stays tidy.
+function buildAmountChips(
+  defaultAmount: number,
+  unit: FoodUnit,
+  recentAmounts?: number[]
+): AmountChip[] {
+  const out: AmountChip[] = [];
+  const seen = new Set<number>();
+  const unitLabel = UNIT_LABEL[unit];
+  const labelFor = (v: number) =>
+    unit === "piece" ? formatAmount(v) : `${formatAmount(v)}${unitLabel}`;
+  const push = (value: number, label: string, title?: string) => {
+    const v = Math.round(value * 100) / 100;
+    if (!Number.isFinite(v) || v <= 0 || seen.has(v)) return;
+    seen.add(v);
+    out.push({ key: `${label}-${v}`, label, value: v, title });
+  };
+
+  if (recentAmounts) {
+    recentAmounts.forEach((v, i) =>
+      push(v, labelFor(v), i === 0 ? "Last logged amount" : "Recent amount")
+    );
+  }
+  push(defaultAmount, labelFor(defaultAmount), "Default serving");
+  const presets =
+    unit === "piece"
+      ? [1, 2, 3]
+      : unit === "ml"
+      ? [100, 150, 200, 250]
+      : [50, 100, 150, 200];
+  for (const p of presets) push(p, labelFor(p));
+  push(defaultAmount / 2, "½", "Half serving");
+  push(defaultAmount * 2, "×2", "Double serving");
+
+  return out.slice(0, 8);
 }
 
 function FoodDetailDialog({
@@ -864,6 +974,7 @@ function FoodDetailDialog({
   source,
   mine,
   edited,
+  recentAmounts,
   onClose,
   onConfirm,
   onEdit,
@@ -872,6 +983,7 @@ function FoodDetailDialog({
   source?: string;
   mine?: boolean;
   edited?: boolean;
+  recentAmounts?: number[];
   onClose: () => void;
   onConfirm: (amount: number) => void;
   onEdit: () => void;
@@ -890,13 +1002,25 @@ function FoodDetailDialog({
       : `per ${food.defaultAmount}${UNIT_LABEL[food.unit]}`;
   const perKcal = Math.round(food.caloriesPer * perAmount);
   const perPro = Math.round(food.proteinPer * perAmount * 10) / 10;
+  const iconImage =
+    "iconImageDataUrl" in food ? food.iconImageDataUrl : undefined;
+  const amountChips = buildAmountChips(
+    food.defaultAmount,
+    food.unit,
+    recentAmounts
+  );
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xs">
         <DialogHeader>
           <DialogTitle className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-xl">{food.emoji ?? "🍽"}</span>
+            <FoodIcon
+              emoji={food.emoji}
+              src={iconImage}
+              sizeClass="h-7 w-7"
+              textClass="text-xl"
+            />
             <span className="min-w-0 flex-1 truncate">{food.name}</span>
             {mine && (
               <span className="shrink-0 rounded-sm border border-emerald-500/40 bg-emerald-500/10 px-1 font-mono text-[8px] uppercase tracking-wider text-emerald-300">
@@ -928,6 +1052,29 @@ function FoodDetailDialog({
               autoFocus
               className="font-mono text-lg"
             />
+            {amountChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {amountChips.map((chip) => {
+                  const active = Number.isFinite(n) && n === chip.value;
+                  return (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={() => setAmount(formatAmount(chip.value))}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 font-mono text-[11px] tabular-nums transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border/60 bg-card/40 text-muted-foreground hover:border-foreground hover:text-foreground"
+                      )}
+                      title={chip.title}
+                    >
+                      {chip.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-5 gap-1.5 rounded-lg border border-border/60 bg-card/40 p-2 text-center">
             <MacroStat label="kcal" value={macros.calories} />
@@ -1213,6 +1360,7 @@ function CreateCustomDialog({
   const [category, setCategory] = useState<FoodCategory | "">("");
   const [emoji, setEmoji] = useState("");
   const [emojiTouched, setEmojiTouched] = useState(false);
+  const [iconImage, setIconImage] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   const effectiveEmoji =
@@ -1256,6 +1404,7 @@ function CreateCustomDialog({
       id,
       name: trimmed,
       emoji: effectiveEmoji,
+      iconImageDataUrl: iconImage,
       unit,
       defaultAmount: unit === "piece" ? 1 : ref,
       caloriesPer: cal / ref,
@@ -1295,12 +1444,14 @@ function CreateCustomDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Icon</Label>
-            <EmojiPicker
-              value={effectiveEmoji}
-              onChange={(e) => {
+            <FoodIconField
+              emoji={effectiveEmoji}
+              onEmojiChange={(e) => {
                 setEmoji(e);
                 setEmojiTouched(true);
               }}
+              imageDataUrl={iconImage}
+              onImageChange={setIconImage}
               category={category || undefined}
             />
           </div>
@@ -1441,9 +1592,12 @@ function CustomsListDialog({
                   onClick={() => onPick(f)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-left"
                 >
-                  <span className="shrink-0 text-lg">
-                    {f.emoji ?? suggestEmoji(f.name, f.category)}
-                  </span>
+                  <FoodIcon
+                    emoji={f.emoji ?? suggestEmoji(f.name, f.category)}
+                    src={f.iconImageDataUrl}
+                    sizeClass="h-6 w-6"
+                    textClass="text-lg"
+                  />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-medium">
                       {f.name}
@@ -1530,6 +1684,9 @@ function EditCustomDialog({
   const [emoji, setEmoji] = useState(
     food.emoji ?? suggestEmoji(food.name, food.category)
   );
+  const [iconImage, setIconImage] = useState<string | undefined>(
+    food.iconImageDataUrl
+  );
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
@@ -1553,6 +1710,7 @@ function EditCustomDialog({
       ...food,
       name: trimmed,
       emoji: emoji || food.emoji,
+      iconImageDataUrl: iconImage,
       unit,
       defaultAmount: unit === "piece" ? 1 : ref,
       caloriesPer: cal / ref,
@@ -1582,9 +1740,11 @@ function EditCustomDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Icon</Label>
-            <EmojiPicker
-              value={emoji}
-              onChange={setEmoji}
+            <FoodIconField
+              emoji={emoji}
+              onEmojiChange={setEmoji}
+              imageDataUrl={iconImage}
+              onImageChange={setIconImage}
               category={category || undefined}
             />
           </div>
