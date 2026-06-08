@@ -31,7 +31,7 @@ import type {
   FoodOverride,
   Recipe,
 } from "@/lib/types";
-import { EmojiPicker, suggestEmoji } from "@/components/emoji-picker";
+import { suggestEmoji } from "@/components/emoji-picker";
 import { FoodIcon, FoodIconField } from "@/components/food-icon";
 import {
   RecipesPanel,
@@ -171,7 +171,11 @@ export function QuickFoods({ date }: { date: string }) {
   const allFoods = useMemo<FoodLike[]>(() => {
     const list: FoodLike[] = [];
     for (const p of FOOD_PRESETS) {
-      list.push(applyOverride(p, overrides[p.id]));
+      const o = overrides[p.id];
+      list.push({
+        ...applyOverride(p, o),
+        iconImageDataUrl: o?.iconImageDataUrl,
+      });
     }
     for (const c of customFoods) {
       list.push({
@@ -1140,6 +1144,9 @@ function EditPresetDialog({
 }) {
   const [name, setName] = useState(preset.name);
   const [emoji, setEmoji] = useState(preset.emoji ?? original.emoji);
+  const [iconImage, setIconImage] = useState<string | undefined>(
+    (preset as FoodPreset & { iconImageDataUrl?: string }).iconImageDataUrl
+  );
   const [unit, setUnit] = useState<FoodUnit>(preset.unit);
   const [refAmount, setRefAmount] = useState(String(preset.defaultAmount));
   const [calories, setCalories] = useState(
@@ -1207,8 +1214,16 @@ function EditPresetDialog({
     if (Math.abs(newFatPer - (original.fatsPer ?? 0)) > 1e-6) {
       override.fatsPer = newFatPer;
     }
+    // Presets ship without an image, so any set image is an override; an
+    // unset image means "use the emoji" (and clears any prior image).
+    if (iconImage) {
+      override.iconImageDataUrl = iconImage;
+    }
     if (Object.keys(override).length === 0) {
-      onClose();
+      // Nothing differs from the default. If a prior override existed (e.g.
+      // the user just removed a photo icon), clear it so the change sticks.
+      if (isOverridden) onReset();
+      else onClose();
       return;
     }
     onSave(override);
@@ -1239,9 +1254,11 @@ function EditPresetDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Icon</Label>
-            <EmojiPicker
-              value={emoji}
-              onChange={setEmoji}
+            <FoodIconField
+              emoji={emoji}
+              onEmojiChange={setEmoji}
+              imageDataUrl={iconImage}
+              onImageChange={setIconImage}
               category={original.category}
             />
           </div>

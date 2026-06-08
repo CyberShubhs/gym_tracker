@@ -4,44 +4,47 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { FoodCategory } from "@/lib/foods";
 
+// NOTE: keep every emoji here at Unicode 11 (2018) or older. Newer code
+// points (🫑 bell pepper, 🧄 garlic, 🧅 onion, 🧈 butter, 🫛 pea, 🫐
+// blueberries, 🟡 large circle …) render as empty "tofu" boxes on devices
+// whose emoji font predates Unicode 12, so they are intentionally avoided.
 export const EMOJI_BY_CATEGORY: Record<FoodCategory, string[]> = {
   protein: [
     "🍗", "🍖", "🥩", "🐟", "🍣", "🦐", "🦀", "🥚", "🍳", "🧀",
-    "🥛", "🥣", "🫘", "🍤", "💪", "🌭",
+    "🥛", "🥣", "🍤", "💪", "🌭", "🍥",
   ],
   veg: [
-    "🥦", "🥬", "🫑", "🥒", "🍅", "🥕", "🌽", "🍆", "🌶", "🥔",
-    "🫛", "🧄", "🧅", "🍄", "🥗",
+    "🥦", "🥬", "🌶️", "🥒", "🍅", "🥕", "🌽", "🍆", "🥔", "🍄",
+    "🥗", "🥑", "🌿",
   ],
   fruit: [
     "🍎", "🍌", "🍊", "🍓", "🍇", "🥭", "🍍", "🍉", "🥝", "🍑",
-    "🍒", "🍐", "🫐", "🍋", "🥑",
+    "🍒", "🍐", "🍈", "🍋", "🥥",
   ],
   carb: [
-    "🍚", "🍞", "🫓", "🥣", "🌾", "🍝", "🍜", "🥖", "🥨", "🥐",
+    "🍚", "🍞", "🥙", "🥣", "🌾", "🍝", "🍜", "🥖", "🥨", "🥐",
     "🌽", "🥔", "🍙", "🍘", "🥯", "🍠", "🍩",
   ],
   fat: [
-    "🥑", "🌰", "🥜", "🫒", "🧈", "🥥", "🫛", "🧀", "🍳", "🍫",
+    "🥑", "🌰", "🥜", "🧴", "🥥", "🧀", "🍳", "🍫", "🥛",
   ],
-  egg: ["🥚", "🍳", "🟡"],
+  egg: ["🥚", "🍳"],
   dairy: [
-    "🧀", "🥛", "🥣", "🧈", "🍶", "🍦", "🐄", "🥥",
+    "🧀", "🥛", "🥣", "🍶", "🍦", "🐄", "🥥",
   ],
   sauce: [
-    "🥫", "🍅", "🌶️", "🍯", "🧂", "🧄", "🧅", "🫙", "🥣", "🌭",
-    "🫗", "🥜",
+    "🥫", "🍅", "🌶️", "🍯", "🧂", "🥣", "🌭", "🥜", "🥗", "🍶",
   ],
 };
 
 // Drinks / extras that don't fit a single category but should be available
-// in the picker grid.
+// in the picker grid. (Same Unicode ≤ 11 rule as above.)
 const EXTRA_EMOJIS = [
-  "☕", "🍵", "🥤", "🧋", "🍶", "🍷", "🍺",
-  "🥃", "💧", "🍯", "🍫", "🍪", "🥞", "🧇",
+  "☕", "🍵", "🥤", "🍶", "🍷", "🍺",
+  "🥃", "💧", "🍯", "🍫", "🍪", "🥞",
   "🍰", "🍦", "🥟", "🍕", "🍔", "🌮",
   // Sauces / condiments + seasoning so they're reachable from the All tab.
-  "🧂", "🌶️", "🥫", "🧄", "🧅", "🍅", "🫙", "🫗", "🍶",
+  "🧂", "🌶️", "🥫", "🍅",
 ];
 
 export const ALL_FOOD_EMOJIS = Array.from(
@@ -66,7 +69,7 @@ export function suggestEmoji(
     [/yog(h)?urt|curd|dahi/, "🥣"],
     [/milk|lassi/, "🥛"],
     [/cheese|paneer|halloumi|feta|cheddar|mozzarella|gouda|parmesan/, "🧀"],
-    [/tofu|seitan|tempeh/, "🧈"],
+    [/tofu|seitan|tempeh/, "🍥"],
     [/banana/, "🍌"],
     [/apple/, "🍎"],
     [/orange/, "🍊"],
@@ -84,29 +87,29 @@ export function suggestEmoji(
     [/spinach|kale|lettuce|greens/, "🥬"],
     [/salad/, "🥗"],
     [/cucumber/, "🥒"],
-    [/pepper|capsicum|bell/, "🫑"],
+    [/pepper|capsicum|bell/, "🌶️"],
     [/carrot/, "🥕"],
     [/corn/, "🌽"],
     [/potato|aloo/, "🥔"],
     [/mushroom/, "🍄"],
-    [/garlic/, "🧄"],
-    [/onion/, "🧅"],
+    [/garlic/, "🌿"],
+    [/onion/, "🥬"],
     [/rice|biryani|pulao|pulav|fried rice/, "🍚"],
     [/bread|toast|bagel/, "🍞"],
-    [/roti|chapati|chapathi|naan|tortilla|paratha|wrap/, "🫓"],
+    [/roti|chapati|chapathi|naan|tortilla|paratha|wrap/, "🥙"],
     [/oats?|oatmeal|muesli|porridge|cereal|granola/, "🥣"],
     [/pasta|spaghetti|macaroni/, "🍝"],
     [/noodle|ramen|maggi/, "🍜"],
     [/almond|cashew|walnut|pistachio/, "🌰"],
     [/peanut/, "🥜"],
-    [/oil|ghee/, "🫒"],
-    [/butter/, "🧈"],
+    [/oil|ghee/, "🧴"],
+    [/butter/, "🧀"],
     // Sauces / condiments — keep these ahead of the generic fallbacks.
     [/ketchup|tomato\s*sauce/, "🍅"],
     [/mayo|mayonnaise|aioli/, "🥫"],
-    [/soy\s*sauce|tamari|teriyaki/, "🫙"],
+    [/soy\s*sauce|tamari|teriyaki/, "🥫"],
     [/bbq|barbe?cue/, "🍯"],
-    [/hummus/, "🫘"],
+    [/hummus/, "🥣"],
     [/chutney/, "🥭"],
     [/salsa/, "🍅"],
     [/mustard/, "🌭"],
@@ -122,7 +125,7 @@ export function suggestEmoji(
     [/protein\s*bar|bar|snack/, "🍫"],
     [/cookie|biscuit/, "🍪"],
     [/pancake|crepe/, "🥞"],
-    [/waffle/, "🧇"],
+    [/waffle/, "🥞"],
     [/cake|brownie/, "🍰"],
     [/ice\s*cream|gelato/, "🍦"],
     [/dumpling|momo|gyoza/, "🥟"],

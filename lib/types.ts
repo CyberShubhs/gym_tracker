@@ -160,6 +160,10 @@ export type Sex = "male" | "female";
 export type FoodOverride = {
   name?: string;
   emoji?: string;
+  // Optional browser-generated photo icon for a preset food (same format as
+  // CustomFood.iconImageDataUrl). Lets existing/preset foods use a photo icon
+  // too, not just custom foods. Round-trips through JSON export/import.
+  iconImageDataUrl?: string;
   unit?: "g" | "ml" | "piece";
   defaultAmount?: number;
   caloriesPer?: number;

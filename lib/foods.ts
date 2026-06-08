@@ -79,7 +79,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "bell-red",
     name: "Bell pepper (red)",
-    emoji: "🫑",
+    emoji: "🌶️",
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.31,
@@ -93,7 +93,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "bell-green",
     name: "Bell pepper (green)",
-    emoji: "🫑",
+    emoji: "🌶️",
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.2,
@@ -107,7 +107,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "bell-yellow",
     name: "Bell pepper (yellow)",
-    emoji: "🫑",
+    emoji: "🌶️",
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.27,
@@ -207,7 +207,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "egg-yolk",
     name: "Egg yolk",
-    emoji: "🟡",
+    emoji: "🍳",
     unit: "g",
     defaultAmount: 50,
     caloriesPer: 3.22,
@@ -279,7 +279,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "olive-oil",
     name: "Olive oil",
-    emoji: "🫒",
+    emoji: "🧴",
     unit: "ml",
     defaultAmount: 10,
     caloriesPer: 8.84,
@@ -479,7 +479,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "tofu",
     name: "Tofu (firm)",
-    emoji: "🧈",
+    emoji: "🍥",
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.76,
@@ -523,7 +523,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "roti",
     name: "Roti / chapati (~40 g)",
-    emoji: "🫓",
+    emoji: "🥙",
     unit: "piece",
     defaultAmount: 1,
     caloriesPer: 120,
@@ -656,7 +656,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "sauce-soy",
     name: "Soy sauce",
-    emoji: "🫙",
+    emoji: "🥫",
     unit: "ml",
     defaultAmount: 15,
     caloriesPer: 0.53,
@@ -684,7 +684,7 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "sauce-hummus",
     name: "Hummus",
-    emoji: "🫘",
+    emoji: "🥣",
     unit: "g",
     defaultAmount: 30,
     caloriesPer: 1.66,
