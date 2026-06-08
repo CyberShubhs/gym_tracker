@@ -215,6 +215,27 @@ export async function resetCurrentProfile(): Promise<{ ok: boolean }> {
   if (!userId) return { ok: false };
   await migrate();
   const sql = getSql();
+  // Safeguard: snapshot the existing profile into a PROTECTED backup before
+  // the destructive delete, so an accidental/unintended reset is always
+  // recoverable from Settings → Backups.
+  const existing = (await sql`
+    SELECT data FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (existing.length > 0 && looksLikeAppState(existing[0].data)) {
+    try {
+      await writeBackup(
+        userId,
+        existing[0].data as AppState,
+        "manual",
+        "auto:pre-reset-guard",
+        `pre-reset-${new Date().toISOString()}`,
+        true
+      );
+      await trimBackups(userId, "manual", 40);
+    } catch {
+      // Never let a backup hiccup block the user-requested reset.
+    }
+  }
   await sql`
     DELETE FROM user_state WHERE user_id = ${userId}
   `;
@@ -332,18 +353,33 @@ async function writeBackup(
   state: AppState,
   kind: "daily" | "weekly" | "manual" | "pre-restore",
   source: string,
-  periodKey?: string
+  periodKey?: string,
+  protectedFlag = false
 ): Promise<void> {
   const sql = getSql();
   const key = periodKey ?? new Date().toISOString();
+  // `protected` is only set on INSERT — the ON CONFLICT path deliberately
+  // leaves it alone so re-saving a daily/weekly bucket never un-protects a
+  // snapshot the user (or a safeguard) pinned.
   await sql`
-    INSERT INTO user_state_backups (user_id, kind, period_key, data, source)
-    VALUES (${userId}, ${kind}, ${key}, ${JSON.stringify(state)}::jsonb, ${source})
+    INSERT INTO user_state_backups (user_id, kind, period_key, data, source, protected)
+    VALUES (${userId}, ${kind}, ${key}, ${JSON.stringify(state)}::jsonb, ${source}, ${protectedFlag})
     ON CONFLICT (user_id, kind, period_key) DO UPDATE SET
       data = EXCLUDED.data,
       source = EXCLUDED.source,
       created_at = now()
   `;
+}
+
+// Total number of logged days across the three histories — used by the
+// data-loss safeguards to detect a sudden collapse to (near-)empty.
+function countLogDays(state: Partial<AppState> | null | undefined): number {
+  if (!state) return 0;
+  return (
+    Object.keys(state.workoutLogs ?? {}).length +
+    Object.keys(state.foodLogs ?? {}).length +
+    Object.keys(state.weightLogs ?? {}).length
+  );
 }
 
 // Retention sweep — keep the last N unprotected snapshots per (user, kind).
@@ -384,6 +420,34 @@ export async function saveState(state: AppState): Promise<{ ok: true }> {
   if (!userId) throw new Error("Unauthorized");
   await migrate();
   const sql = getSql();
+  // Safeguard: if this save would collapse a substantial profile down to
+  // (near-)empty, snapshot the EXISTING row into a PROTECTED backup first.
+  // The save still proceeds — we never block a legitimate edit — but the
+  // pre-collapse state is always recoverable. This is the defence the
+  // earlier silent wipe lacked.
+  const incomingLogDays = countLogDays(state);
+  const existingRows = (await sql`
+    SELECT data FROM user_state WHERE user_id = ${userId}
+  `) as Array<{ data: unknown }>;
+  if (existingRows.length > 0 && looksLikeAppState(existingRows[0].data)) {
+    const prev = existingRows[0].data as AppState;
+    const prevLogDays = countLogDays(prev);
+    if (prevLogDays >= 10 && incomingLogDays < prevLogDays / 2) {
+      try {
+        await writeBackup(
+          userId,
+          prev,
+          "manual",
+          "auto:pre-shrink-guard",
+          `pre-shrink-${new Date().toISOString()}`,
+          true
+        );
+        await trimBackups(userId, "manual", 40);
+      } catch {
+        // Best-effort — must never block the user's save.
+      }
+    }
+  }
   await sql`
     INSERT INTO user_state (user_id, data, updated_at)
     VALUES (${userId}, ${JSON.stringify(state)}, now())
