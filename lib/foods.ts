@@ -14,6 +14,9 @@ export type FoodPreset = {
   id: string;
   name: string;
   emoji: string;
+  // Never set on the built-in presets themselves — carried here so a preset
+  // merged with a user override (which can add a photo icon) keeps its type.
+  iconImageDataUrl?: string;
   unit: FoodUnit;
   defaultAmount: number;
   caloriesPer: number;
@@ -68,6 +71,50 @@ export const CATEGORY_ORDER: FoodCategory[] = [
   "veg",
   "fat",
 ];
+
+// Guess the category for a typed food name so new custom foods land on the
+// right tab without the user having to pick one. Order matters — the most
+// specific cues (condiments, protein supplements) run before broad food
+// groups, mirroring suggestEmoji in components/emoji-picker.tsx.
+const CATEGORY_RULES: Array<[RegExp, FoodCategory]> = [
+  [
+    /ketchup|mayo|mayonnaise|aioli|mustard|chutney|salsa|dressing|vinaigrette|gravy|relish|pesto|sriracha|tabasco|hot\s*sauce|soy\s*sauce|teriyaki|bbq|barbe?cue|hummus|sauce|condiment|seasoning|\bspice\b|\bsalt\b|honey|\bjam\b|peri.?peri|piri.?piri/,
+    "sauce",
+  ],
+  [/whey|protein\s*(shake|powder|scoop|bar)|isolate|casein/, "protein"],
+  [/\begg/, "egg"],
+  [
+    /milk|yog(h)?urt|curd|dahi|paneer|cheese|lassi|kefir|ice\s*cream|gelato|cream\b/,
+    "dairy",
+  ],
+  [
+    /chicken|poultry|beef|steak|mutton|lamb|pork|turkey|duck|fish|salmon|tuna|mackerel|sardine|prawn|shrimp|crab|sausage|\bham\b|tofu|tempeh|seitan|soya?\s*chunk|\bdal\b|lentil|chickpea|chana|rajma|bean/,
+    "protein",
+  ],
+  [
+    /\boil\b|ghee|butter|almond|cashew|walnut|pistachio|peanut|\bnuts?\b|seed|avocado|chocolate|tahini|olive/,
+    "fat",
+  ],
+  [
+    /apple|banana|orange|mango|grape|berr(y|ies)|strawberr|melon|kiwi|peach|pear|pineapple|papaya|pomegranate|plum|cherry|lychee|guava|fruit|date\b|fig\b|raisin/,
+    "fruit",
+  ],
+  [
+    /rice|bread|roti|chapat(h)?i|naan|paratha|oats?\b|oatmeal|pasta|spaghetti|noodle|macaroni|potato|quinoa|cereal|granola|muesli|tortilla|bagel|biryani|pulao|poha|upma|idli|dosa|cracker|cookie|biscuit|cake|sugar|wrap\b|toast/,
+    "carb",
+  ],
+  [
+    /broccoli|spinach|kale|lettuce|cabbage|cauliflower|carrot|cucumber|tomato|onion|pepper|capsicum|mushroom|zucchini|courgette|beet|salad|okra|bhindi|gourd|peas?\b|veg/,
+    "veg",
+  ],
+];
+
+export function suggestCategory(name: string): FoodCategory | undefined {
+  const n = name.trim().toLowerCase();
+  if (!n) return undefined;
+  for (const [re, c] of CATEGORY_RULES) if (re.test(n)) return c;
+  return undefined;
+}
 
 // Macros per gram (or per piece for whole items). Reference numbers from
 // USDA FoodData Central (FDC) and Indian Food Composition Tables (IFCT) for

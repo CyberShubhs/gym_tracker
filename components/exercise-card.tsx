@@ -30,7 +30,9 @@ import { ExercisePRDetail } from "@/components/exercise-pr-detail";
 import { TrainingGuide } from "@/components/training-guide";
 import { VariantPicker } from "@/components/variant-picker";
 import {
+  bestSet,
   loadDirectionFor,
+  nextLoadSuggestion,
   progressionAdvice,
   sessionPRs,
   type PRFlags,
@@ -180,6 +182,18 @@ export const ExerciseCard = memo(function ExerciseCard({
     () => progressionAdvice(exercise, todaySets),
     [exercise, todaySets]
   );
+  const equipment: Equipment =
+    exercise.equipment ?? inferEquipment(exercise.name);
+  // When today's work earned a progression, turn it into a concrete load —
+  // direction-aware, so assisted lifts are told to REMOVE help.
+  const suggestion = useMemo(() => {
+    if (advice.status !== "ready" || !todaySets || todaySets.length === 0) {
+      return null;
+    }
+    const top = bestSet(todaySets, direction);
+    if (!top) return null;
+    return nextLoadSuggestion(direction, equipment, top.weight, unit);
+  }, [advice.status, todaySets, direction, equipment, unit]);
 
   const updateDraft = (idx: number, patch: Partial<Draft>) => {
     setDrafts((prev) => {
@@ -249,7 +263,6 @@ export const ExerciseCard = memo(function ExerciseCard({
       ? `${exercise.repsLow}`
       : `${exercise.repsLow}–${exercise.repsHigh}`;
 
-  const equipment: Equipment = exercise.equipment ?? inferEquipment(exercise.name);
   const usesPlates = equipment === "barbell";
 
   const lastSummary = last?.sets?.[0]
@@ -325,6 +338,7 @@ export const ExerciseCard = memo(function ExerciseCard({
               beforeDate={date}
               unit={unit}
               variant={activeVariant}
+              direction={direction}
             />
           </span>
         </div>
@@ -466,7 +480,9 @@ export const ExerciseCard = memo(function ExerciseCard({
         </div>
         <ProgressionHint
           status={advice.status}
-          message={advice.message}
+          message={
+            suggestion ? `${advice.message} ${suggestion.label}` : advice.message
+          }
           detail={advice.detail}
           hits={advice.hits}
           needed={advice.needed}

@@ -49,6 +49,9 @@ const METRICS: Metric[] = [
   {
     key: "best1RM",
     label: "Est. 1RM",
+    // e1RM grows with raw weight, which for assistance lifts means more
+    // machine help — flip it so the chart still reads "up = stronger".
+    assistInverts: true,
     value: (s) => s.best1RM,
     format: (n, unit) => `${round1(n)} ${unit}`,
   },
@@ -115,13 +118,17 @@ function computePREvents(
       // weight PR — the first session can't beat itself.
       nextMaxWeight = s.maxWeight;
     }
-    if (s.best1RM > best1RM + 1e-6) {
-      events.push("e1rm");
-      nextBest1RM = s.best1RM;
-    }
-    if (s.totalVolume > bestVolume + 1e-6) {
-      events.push("volume");
-      nextBestVolume = s.totalVolume;
+    // e1RM / volume PRs are only meaningful when more weight is better —
+    // for assistance loads they'd reward adding machine help.
+    if (direction !== "assistance") {
+      if (s.best1RM > best1RM + 1e-6) {
+        events.push("e1rm");
+        nextBest1RM = s.best1RM;
+      }
+      if (s.totalVolume > bestVolume + 1e-6) {
+        events.push("volume");
+        nextBestVolume = s.totalVolume;
+      }
     }
     for (const set of s.sets) {
       const prev = repsAtWeight.get(set.weight) ?? 0;

@@ -43,13 +43,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)",
           paddingBottom:
             "calc(env(safe-area-inset-bottom) + 6.5rem)",
+          paddingLeft: "max(env(safe-area-inset-left), 1rem)",
+          paddingRight: "max(env(safe-area-inset-right), 1rem)",
         }}
       >
         {children}
       </main>
       <nav
         className="fixed inset-x-0 bottom-0 z-30 border-t border-border/60 bg-background/90 backdrop-blur-md"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
+        }}
       >
         <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around">
           {NAV.map((item) => {

@@ -1,9 +1,11 @@
 import type {
   AppState,
+  Equipment,
   LoadDirection,
   SetEntry,
   Settings,
   TemplateExercise,
+  Unit,
   WorkoutLog,
 } from "./types";
 import { exerciseIdGroup, resolveExerciseId } from "./exercise-aliases";
@@ -19,10 +21,13 @@ export type Direction = LoadDirection;
 //      templates. Also checked under the canonical alias id so it covers
 //      the whole group (ez-bar-curl → barbell-curl, etc.).
 //   2) The per-exercise `loadDirection` field on the template.
-//   3) Variant string containing "assist" — chosen because the default
-//      templates have ambiguous names like "Assisted Dips / Tricep Dips"
-//      that could be either depending on what the user actually did. Let
-//      the variant tag the user picked decide.
+//   3) Variant string: "assist" => assistance; an explicit "weighted" /
+//      "bodyweight" / "bw" variant pins the lift to normal even when the
+//      exercise name says "Assisted".
+//   4) Exercise name containing "assist" — so "Assisted Dips / Tricep
+//      Dips" and "Lat Pulldown / Assisted Pull-up" behave as assistance
+//      lifts out of the box, without the user having to tag a variant or
+//      flip a setting first.
 // Otherwise "normal" (higher weight = better).
 export function loadDirectionFor(
   exerciseId: string,
@@ -40,6 +45,9 @@ export function loadDirectionFor(
   if (fromTemplate) return fromTemplate;
   const variant = (options?.variant ?? "").toLowerCase();
   if (variant.includes("assist")) return "assistance";
+  if (/weighted|bodyweight|\bbw\b/.test(variant)) return "normal";
+  const name = (options?.exercise?.name ?? "").toLowerCase();
+  if (name.includes("assist")) return "assistance";
   return "normal";
 }
 
@@ -271,8 +279,12 @@ export function sessionPRs(
         ? past.length > 0 && today.maxWeight < bests.maxWeight - 1e-6
         : today.maxWeight > bests.maxWeight + 1e-6;
     if (beatsWeight) flags.weightPR = true;
-    if (today.best1RM > bests.best1RM + 1e-6) flags.e1rmPR = true;
-    if (today.totalVolume > bests.bestVolume + 1e-6) flags.volumePR = true;
+    // e1RM and volume both grow with raw weight, which for assistance
+    // loads means MORE machine help — never celebrate that as a PR.
+    if (direction !== "assistance") {
+      if (today.best1RM > bests.best1RM + 1e-6) flags.e1rmPR = true;
+      if (today.totalVolume > bests.bestVolume + 1e-6) flags.volumePR = true;
+    }
     // Rep PR at a previously used weight: any set today beat the previous
     // best reps at that exact weight.
     for (const set of today.sets) {
@@ -302,6 +314,41 @@ export function checkPR(
     previousBest: previous?.bestSet ?? null,
     todayBest: today?.bestSet ?? null,
   };
+}
+
+// Smallest sensible load jump for the equipment, in the user's unit. Used
+// to turn "ready to progress" into a concrete number.
+function loadIncrement(equipment: Equipment | undefined, unit: Unit): number {
+  if (unit === "lb") return 5;
+  if (equipment === "dumbbell") return 2;
+  if (equipment === "machine" || equipment === "cable") return 5;
+  return 2.5;
+}
+
+// Concrete next-session load once every prescribed set hit the top of the
+// rep range. Direction-aware: assistance lifts progress by REMOVING help,
+// down to fully unassisted at 0.
+export function nextLoadSuggestion(
+  direction: Direction,
+  equipment: Equipment | undefined,
+  topWeight: number,
+  unit: Unit
+): { weight: number; label: string } | null {
+  if (!Number.isFinite(topWeight) || topWeight < 0) return null;
+  const inc = loadIncrement(equipment, unit);
+  if (direction === "assistance") {
+    if (topWeight <= 0) return null; // already unassisted
+    const next = Math.max(0, Math.round((topWeight - inc) * 2) / 2);
+    return {
+      weight: next,
+      label:
+        next === 0
+          ? "Try it unassisted next time."
+          : `Try ${next} ${unit} assistance next time.`,
+    };
+  }
+  const next = Math.round((topWeight + inc) * 2) / 2;
+  return { weight: next, label: `Try ${next} ${unit} next time.` };
 }
 
 export type ProgressionAdvice = {

@@ -2,10 +2,11 @@
 
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
+  Camera,
   ChefHat,
-  Droplet,
   History as HistoryIcon,
   Info,
+  Loader2,
   Pencil,
   Plus,
   RefreshCcw,
@@ -21,6 +22,7 @@ import {
   FOOD_PRESETS,
   UNIT_LABEL,
   calcMacros,
+  suggestCategory,
   type FoodCategory,
   type FoodPreset,
   type FoodUnit,
@@ -33,6 +35,7 @@ import type {
 } from "@/lib/types";
 import { suggestEmoji } from "@/components/emoji-picker";
 import { FoodIcon, FoodIconField } from "@/components/food-icon";
+import { processFoodIconImage } from "@/lib/image-icon";
 import {
   RecipesPanel,
   computeRecipeTotals,
@@ -249,12 +252,30 @@ export function QuickFoods({ date }: { date: string }) {
     [customFoods]
   );
 
+  // Token-based search: every word must match somewhere in the name or
+  // category ("chicken curry" finds "Curry, chicken"; "fruit" lists the
+  // fruit tab). Results rank prefix matches and the user's own foods first.
   const searchResults = useMemo<FoodLike[]>(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
-    return allFoods
-      .filter((f) => f.name.toLowerCase().includes(q))
-      .slice(0, 12);
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const scored: Array<{ f: FoodLike; score: number }> = [];
+    for (const f of allFoods) {
+      const name = f.name.toLowerCase();
+      const cat = f.category
+        ? `${f.category} ${CATEGORY_LABEL[f.category].toLowerCase()}`
+        : "";
+      if (!tokens.every((t) => name.includes(t) || cat.includes(t))) continue;
+      let score = 0;
+      if (name.startsWith(tokens[0])) score += 4;
+      else if (name.includes(tokens[0])) score += 2;
+      if (f.__isCustom) score += 1;
+      scored.push({ f, score });
+    }
+    scored.sort(
+      (a, b) => b.score - a.score || a.f.name.length - b.f.name.length
+    );
+    return scored.map((x) => x.f).slice(0, 18);
   }, [allFoods, search]);
 
   const searchedRecipes = useMemo<Recipe[]>(() => {
@@ -262,13 +283,6 @@ export function QuickFoods({ date }: { date: string }) {
     if (!q) return [];
     return recipes.filter((r) => r.name.toLowerCase().includes(q));
   }, [recipes, search]);
-
-  // Sauces are easy to forget and calorie-dense — surface a compact quick row
-  // so they're a single tap away without opening the Sauces tab.
-  const sauces = useMemo(
-    () => (grouped.get("sauce") ?? []).slice(0, 6),
-    [grouped]
-  );
 
   // Distinct amounts most-recently logged for a given food (newest first),
   // derived live from existing food logs — no new stored state, so it's
@@ -452,28 +466,6 @@ export function QuickFoods({ date }: { date: string }) {
               </div>
             )}
 
-            {sauces.length > 0 && (
-              <div className="space-y-2">
-                <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  <Droplet className="h-3 w-3 text-rose-400" />
-                  Sauces · easy to forget
-                </p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {sauces.map((f) => (
-                    <FoodChip
-                      key={`sauce-${f.id}`}
-                      food={f}
-                      mine={!!f.__isCustom}
-                      edited={!f.__isCustom && !!overrides[f.id]}
-                      onTap={() => quickAdd(f)}
-                      onOpenDetail={() => openDetail(f)}
-                      onEdit={() => editFood(f)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
             <Tabs defaultValue="protein">
               <TabsList className="w-full overflow-x-auto">
                 {CATEGORY_ORDER.map((c) => (
@@ -572,6 +564,26 @@ export function QuickFoods({ date }: { date: string }) {
           }
           source={presetSourceFor(pickedFood)}
           recentAmounts={recentAmountsFor(pickedFood.id)}
+          onSetImage={(dataUrl) => {
+            const isPreset =
+              "__preset" in pickedFood && pickedFood.__preset === true;
+            if (isPreset) {
+              const cur = { ...(overrides[pickedFood.id] ?? {}) };
+              if (dataUrl) cur.iconImageDataUrl = dataUrl;
+              else delete cur.iconImageDataUrl;
+              setFoodOverride(
+                pickedFood.id,
+                Object.keys(cur).length > 0 ? cur : null
+              );
+            } else {
+              const cf = customFoods.find((x) => x.id === pickedFood.id);
+              if (cf) upsertCustomFood({ ...cf, iconImageDataUrl: dataUrl });
+            }
+            // Keep the open dialog in sync with what was just saved.
+            setPickedFood((p) =>
+              p ? { ...p, iconImageDataUrl: dataUrl } : p
+            );
+          }}
           onClose={() => setPickedFood(null)}
           onConfirm={(amount) => {
             const isPreset =
@@ -982,6 +994,7 @@ function FoodDetailDialog({
   onClose,
   onConfirm,
   onEdit,
+  onSetImage,
 }: {
   food: AnyFood;
   source?: string;
@@ -991,8 +1004,27 @@ function FoodDetailDialog({
   onClose: () => void;
   onConfirm: (amount: number) => void;
   onEdit: () => void;
+  // One-tap photo icon: processed on-device into a tiny data URL and saved
+  // straight onto the food (custom field / preset override) by the caller.
+  onSetImage?: (dataUrl: string | undefined) => void;
 }) {
   const [amount, setAmount] = useState(String(food.defaultAmount));
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handlePhotoFile = async (file: File | undefined) => {
+    if (!file || !onSetImage) return;
+    setPhotoError(null);
+    setPhotoBusy(true);
+    try {
+      onSetImage(await processFoodIconImage(file));
+    } catch {
+      setPhotoError("Couldn't use that image — try another.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
   const n = parseFloat(amount);
   const valid = Number.isFinite(n) && n > 0;
   const macros = valid
@@ -1042,6 +1074,51 @@ function FoodDetailDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
+          {onSetImage && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoBusy}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-foreground disabled:opacity-60"
+              >
+                {photoBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Camera className="h-3.5 w-3.5" />
+                )}
+                {iconImage ? "Change photo" : "Add photo icon"}
+              </button>
+              {iconImage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoError(null);
+                    onSetImage(undefined);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove
+                </button>
+              )}
+              {photoError && (
+                <span className="font-mono text-[10px] text-rose-400">
+                  {photoError}
+                </span>
+              )}
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  void handlePhotoFile(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="fd-amount">
               Amount ({UNIT_LABEL[food.unit]})
@@ -1375,16 +1452,26 @@ function CreateCustomDialog({
   const [carbs, setCarbs] = useState("");
   const [fats, setFats] = useState("");
   const [category, setCategory] = useState<FoodCategory | "">("");
+  // Until the user explicitly picks a section, follow the name: typing
+  // "soy sauce" auto-files it under Sauces, "paneer" under Dairy, etc.
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [emoji, setEmoji] = useState("");
   const [emojiTouched, setEmojiTouched] = useState(false);
   const [iconImage, setIconImage] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
+  const autoCategory = !categoryTouched
+    ? suggestCategory(name)
+    : undefined;
+  const effectiveCategory: FoodCategory | "" = categoryTouched
+    ? category
+    : autoCategory ?? "";
+
   const effectiveEmoji =
     emojiTouched && emoji
       ? emoji
       : name.trim()
-      ? suggestEmoji(name, category || undefined)
+      ? suggestEmoji(name, effectiveCategory || undefined)
       : "🍽";
 
   const submit = () => {
@@ -1429,7 +1516,7 @@ function CreateCustomDialog({
       fiberPer: fib / ref,
       carbsPer: car / ref,
       fatsPer: fat / ref,
-      category: category || undefined,
+      category: effectiveCategory || undefined,
     });
   };
 
@@ -1469,7 +1556,7 @@ function CreateCustomDialog({
               }}
               imageDataUrl={iconImage}
               onImageChange={setIconImage}
-              category={category || undefined}
+              category={effectiveCategory || undefined}
             />
           </div>
           <div className="space-y-1.5">
@@ -1523,10 +1610,13 @@ function CreateCustomDialog({
             <div className="flex flex-wrap gap-1.5">
               <button
                 type="button"
-                onClick={() => setCategory("")}
+                onClick={() => {
+                  setCategory("");
+                  setCategoryTouched(true);
+                }}
                 className={cn(
                   "rounded-md border px-2 py-1 text-xs font-medium",
-                  category === ""
+                  effectiveCategory === ""
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border/60 text-muted-foreground hover:text-foreground"
                 )}
@@ -1537,10 +1627,13 @@ function CreateCustomDialog({
                 <button
                   key={c}
                   type="button"
-                  onClick={() => setCategory(c)}
+                  onClick={() => {
+                    setCategory(c);
+                    setCategoryTouched(true);
+                  }}
                   className={cn(
                     "rounded-md border px-2 py-1 text-xs font-medium",
-                    category === c
+                    effectiveCategory === c
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border/60 text-muted-foreground hover:text-foreground"
                   )}
@@ -1550,8 +1643,9 @@ function CreateCustomDialog({
               ))}
             </div>
             <p className="font-mono text-[10px] text-muted-foreground">
-              Picking a section also shows this food on that tab. Otherwise
-              it stays under My foods.
+              {autoCategory
+                ? `Auto-detected ${CATEGORY_LABEL[autoCategory]} from the name — tap a section to change it.`
+                : "Picking a section also shows this food on that tab. Otherwise it stays under My foods."}
             </p>
           </div>
           {error && (

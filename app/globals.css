@@ -123,8 +123,34 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* iOS Safari: no grey flash on tap, no rubber-band scroll behind the
+       fixed bottom nav when running as a home-screen app. */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
   }
   html {
     @apply font-sans;
+    /* Stop iOS from inflating text when the phone rotates. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  /* Kill the 350ms double-tap-to-zoom delay on every tappable control so
+     logging sets/foods feels instant on iPhone. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [role="switch"],
+  [role="tab"] {
+    touch-action: manipulation;
+  }
+  /* Number inputs: hide desktop spin buttons — they're unusable at touch
+     sizes and eat horizontal space in the set-entry grid. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 }

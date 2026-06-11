@@ -1,7 +1,11 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { exerciseHistory, loadDirectionFor } from "@/lib/pr";
+import {
+  exerciseHistory,
+  loadDirectionFor,
+  type Direction,
+} from "@/lib/pr";
 import { cn } from "@/lib/utils";
 
 export function PrLadder({
@@ -9,17 +13,23 @@ export function PrLadder({
   beforeDate,
   unit,
   variant,
+  direction: directionProp,
 }: {
   exerciseId: string;
   beforeDate: string;
   unit: string;
   variant?: string;
+  // Callers that already resolved the direction (with the exercise name in
+  // hand) pass it in; otherwise fall back to variant/settings resolution.
+  direction?: Direction;
 }) {
   const { state } = useStore();
-  const direction = loadDirectionFor(exerciseId, {
-    variant,
-    settings: state.settings,
-  });
+  const direction =
+    directionProp ??
+    loadDirectionFor(exerciseId, {
+      variant,
+      settings: state.settings,
+    });
   const sessions = exerciseHistory(
     state,
     exerciseId,
@@ -33,19 +43,22 @@ export function PrLadder({
   const max = Math.max(...last.map((s) => s.best1RM));
   const W = 80;
   const H = 22;
+  // For "assistance" lifts, less weight (and so a lower e1RM) is progress —
+  // invert the y axis so dropping assistance draws an UPWARD line.
+  const invert = direction === "assistance";
   const xFor = (i: number) =>
     last.length === 1 ? W / 2 : (i / (last.length - 1)) * (W - 4) + 2;
   const yFor = (v: number) => {
     if (max === min) return H / 2;
-    return H - 2 - ((v - min) / (max - min)) * (H - 4);
+    const t = (v - min) / (max - min);
+    return invert ? 2 + t * (H - 4) : H - 2 - t * (H - 4);
   };
   const path = last
     .map((s, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(s.best1RM)}`)
     .join(" ");
 
-  // For "assistance" exercises, a downward arrow on the ladder is good
-  // (less machine help) — flip the colors so the visual cue matches the
-  // direction of progress.
+  // Color by direction of progress: for assistance lifts a falling weight
+  // is the good trend.
   const trend = last[last.length - 1].maxWeight - last[0].maxWeight;
   const goodSign = direction === "assistance" ? -1 : 1;
   const trendColor =

@@ -41,6 +41,7 @@ import {
   computeBmr,
   computeMaintenance,
 } from "@/lib/profile";
+import { loadDirectionFor } from "@/lib/pr";
 
 export default function SettingsPage() {
   const {
@@ -702,7 +703,7 @@ function TemplateEditor({
                     updateExercise(i, { equipment: eq })
                   }
                 />
-                <AssistanceToggle exerciseId={ex.id} />
+                <AssistanceToggle exerciseId={ex.id} exerciseName={ex.name} />
               </div>
             ))}
             <Button
@@ -806,14 +807,27 @@ function EquipmentPicker({
   );
 }
 
-function AssistanceToggle({ exerciseId }: { exerciseId: string }) {
+function AssistanceToggle({
+  exerciseId,
+  exerciseName,
+}: {
+  exerciseId: string;
+  exerciseName?: string;
+}) {
   const { state, updateSettings } = useStore();
   const map = state.settings.exerciseLoadDirection ?? {};
-  const isAssist = map[exerciseId] === "assistance";
+  // Reflect the EFFECTIVE direction (override → name inference) so the
+  // switch matches what the charts actually do. Toggling writes an explicit
+  // override, which also lets the user turn OFF an inferred assistance
+  // (e.g. they do real lat pulldowns on "Lat Pulldown / Assisted Pull-up").
+  const isAssist =
+    loadDirectionFor(exerciseId, {
+      exercise: { name: exerciseName },
+      settings: state.settings,
+    }) === "assistance";
   const toggle = () => {
     const next = { ...map };
-    if (isAssist) delete next[exerciseId];
-    else next[exerciseId] = "assistance";
+    next[exerciseId] = isAssist ? "normal" : "assistance";
     updateSettings({ exerciseLoadDirection: next });
   };
   return (
