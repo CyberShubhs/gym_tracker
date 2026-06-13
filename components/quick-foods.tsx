@@ -12,6 +12,7 @@ import {
   RefreshCcw,
   Search,
   Sliders,
+  Sparkles,
   Trash2,
   UtensilsCrossed,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import {
   FOOD_PRESETS,
   UNIT_LABEL,
   calcMacros,
+  findFoodByName,
   suggestCategory,
   type FoodCategory,
   type FoodPreset,
@@ -177,7 +179,9 @@ export function QuickFoods({ date }: { date: string }) {
       const o = overrides[p.id];
       list.push({
         ...applyOverride(p, o),
-        iconImageDataUrl: o?.iconImageDataUrl,
+        // A user photo override wins; otherwise fall back to any built-in
+        // preset icon (e.g. the coloured bell-pepper SVGs).
+        iconImageDataUrl: o?.iconImageDataUrl ?? p.iconImageDataUrl,
       });
     }
     for (const c of customFoods) {
@@ -1474,6 +1478,30 @@ function CreateCustomDialog({
       ? suggestEmoji(name, effectiveCategory || undefined)
       : "🍽";
 
+  // Offer one-tap macro prefill when the typed name matches a known food and
+  // the user hasn't started entering macros yet (so we never clobber input).
+  const macroMatch =
+    calories.trim() === "" && protein.trim() === ""
+      ? findFoodByName(name)
+      : undefined;
+
+  const prefillFrom = (p: FoodPreset) => {
+    setUnit(p.unit);
+    const amt = p.defaultAmount;
+    if (p.unit !== "piece") setRefAmount(String(amt));
+    const per = (v: number | undefined) =>
+      String(Math.round((v ?? 0) * amt * 100) / 100);
+    setCalories(per(p.caloriesPer));
+    setProtein(per(p.proteinPer));
+    setCarbs(per(p.carbsPer));
+    setFats(per(p.fatsPer));
+    setFiber(per(p.fiberPer));
+    if (p.category) {
+      setCategory(p.category);
+      setCategoryTouched(true);
+    }
+  };
+
   const submit = () => {
     const trimmed = name.trim();
     if (!trimmed) return setError("Name required");
@@ -1545,6 +1573,23 @@ function CreateCustomDialog({
               autoFocus
               maxLength={40}
             />
+            {macroMatch && (
+              <button
+                type="button"
+                onClick={() => prefillFrom(macroMatch)}
+                className="flex w-full items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-left text-xs text-emerald-200 transition-colors hover:bg-emerald-500/15"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  Prefill macros from{" "}
+                  <span className="font-medium">{macroMatch.name}</span>
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-emerald-300/80">
+                  {Math.round(macroMatch.caloriesPer * macroMatch.defaultAmount)}{" "}
+                  kcal
+                </span>
+              </button>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Icon</Label>

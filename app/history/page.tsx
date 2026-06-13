@@ -12,11 +12,12 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { CATEGORY_ACCENT, CATEGORY_LABEL } from "@/lib/defaults";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, formatTime } from "@/lib/utils";
 import {
   ArrowLeft,
   ArrowUpRight,
   Beef,
+  Clock,
   Droplet,
   Flame,
   Scale,
@@ -142,6 +143,14 @@ export default function HistoryPage() {
                   namesForLog[e.id] = e.name;
                 }
               }
+              // "Time lifted": earliest–latest set timestamp for the day.
+              // Older logs without timestamps simply show no time line.
+              const stamps = Object.values(log.entries)
+                .flat()
+                .map((s) => s.ts)
+                .filter((t): t is number => typeof t === "number");
+              const firstTs = stamps.length ? Math.min(...stamps) : null;
+              const lastTs = stamps.length ? Math.max(...stamps) : null;
               return (
                 <Card key={date} className="border-border/70">
                   <CardHeader className="pb-3">
@@ -166,6 +175,15 @@ export default function HistoryPage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    {firstTs != null && (
+                      <p className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        Logged {formatTime(firstTs)}
+                        {lastTs != null && lastTs - firstTs >= 60_000
+                          ? `–${formatTime(lastTs)}`
+                          : ""}
+                      </p>
+                    )}
                     {log.recovery && (
                       <p className="text-xs uppercase tracking-wider text-muted-foreground">
                         Recovery: <span className="text-foreground">{log.recovery}</span>

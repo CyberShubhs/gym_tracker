@@ -1,5 +1,50 @@
-import type { AppState, FoodLog, WorkoutLog } from "./types";
+import type { AppState, FoodLog, WeightLog, WorkoutLog } from "./types";
 import { addDays } from "./utils";
+
+const DAY_MS = 86_400_000;
+
+function isoToUtcMs(iso: string): number {
+  const [y, m, d] = iso.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+export type WeightTrend = {
+  // Smoothed series aligned to the input dates (a ±windowDays moving average
+  // over actual weigh-ins, so noisy day-to-day swings don't hide the trend).
+  ma: Array<{ date: string; value: number }>;
+  // Average change per week across the smoothed series, or null if there
+  // isn't enough spread to estimate.
+  ratePerWeek: number | null;
+};
+
+// Date-windowed moving average (±windowDays) + weekly rate of change. Window
+// is by calendar distance, not entry count, so irregular weigh-in cadence
+// still smooths correctly.
+export function weightTrend(
+  logs: WeightLog[],
+  windowDays = 3
+): WeightTrend {
+  const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length === 0) return { ma: [], ratePerWeek: null };
+  const ms = sorted.map((l) => isoToUtcMs(l.date));
+  const ma = sorted.map((l, i) => {
+    let sum = 0;
+    let n = 0;
+    for (let j = 0; j < sorted.length; j++) {
+      if (Math.abs(ms[j] - ms[i]) <= windowDays * DAY_MS) {
+        sum += sorted[j].weight;
+        n += 1;
+      }
+    }
+    return { date: l.date, value: sum / n };
+  });
+  const first = ma[0];
+  const last = ma[ma.length - 1];
+  const spanDays = (isoToUtcMs(last.date) - isoToUtcMs(first.date)) / DAY_MS;
+  const ratePerWeek =
+    spanDays >= 1 ? ((last.value - first.value) / spanDays) * 7 : null;
+  return { ma, ratePerWeek };
+}
 
 export function workoutDone(log: WorkoutLog | undefined): boolean {
   if (!log) return false;

@@ -44,6 +44,10 @@ export type SetEntry = {
   // "lifefitness", "cable-a"). Missing => "default". Used by PR/last-session
   // lookups so logs from different machines don't mix.
   variant?: string;
+  // Epoch ms when this set was first logged ("time lifted"). Stamped by the
+  // store on first save and preserved across later edits. Optional on read so
+  // sets logged before this field shipped still load.
+  ts?: number;
 };
 
 // Snapshot of the template and exercise definitions that were in effect when

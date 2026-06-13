@@ -514,8 +514,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => {
         const base = baseLogFor(prev, date);
         const nextEntries = { ...base.entries };
-        if (sets.length === 0) delete nextEntries[exerciseId];
-        else nextEntries[exerciseId] = sets;
+        if (sets.length === 0) {
+          delete nextEntries[exerciseId];
+        } else {
+          // Stamp "time lifted" once and preserve it across edits: keep an
+          // incoming set's own ts, else reuse the previous entry's ts at the
+          // same index, else mark it now. So editing reps/weight never resets
+          // when a set was first logged.
+          const prevSets = base.entries[exerciseId] ?? [];
+          const now = Date.now();
+          nextEntries[exerciseId] = sets.map((s, i) =>
+            s.ts != null
+              ? s
+              : { ...s, ts: prevSets[i]?.ts ?? now }
+          );
+        }
         const next = withSnapshotIfPossible(
           { ...base, entries: nextEntries },
           prev.settings

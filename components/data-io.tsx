@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Upload, Users } from "lucide-react";
+import { Download, FileSpreadsheet, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
 import { logout, saveState } from "@/lib/actions";
+import { buildCsv } from "@/lib/export-csv";
 import type { AppState } from "@/lib/types";
 import {
   DEFAULT_SCHEDULE,
@@ -26,23 +27,79 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+function downloadBlob(contents: string, type: string, filename: string) {
+  const blob = new Blob([contents], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Filesystem-safe local timestamp: 2026-06-13T14-30 (colons break filenames).
+function fileStamp(withTime: boolean): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const day = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return withTime ? `${day}T${p(d.getHours())}-${p(d.getMinutes())}` : day;
+}
+
 export function DataIO() {
-  const { state } = useStore();
+  const { state, hydrated } = useStore();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingImport, setPendingImport] = useState<AppState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const counts = {
+    workouts: Object.keys(state.workoutLogs).length,
+    foods: Object.keys(state.foodLogs).length,
+    weights: Object.keys(state.weightLogs).length,
+  };
+  const isEmpty =
+    counts.workouts === 0 && counts.foods === 0 && counts.weights === 0;
+
   const handleExport = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `gym-tracker-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Guard: never let a tap before the server load finishes pass off an
+    // empty default state as a real backup.
+    if (!hydrated) return;
+    if (
+      isEmpty &&
+      !window.confirm(
+        "Your data looks empty. Export anyway? (If you just opened the app, wait a moment for it to load.)"
+      )
+    ) {
+      return;
+    }
+    // Additive provenance — import only reads the known top-level keys, so
+    // this block round-trips harmlessly and never pollutes state.
+    const payload = {
+      ...state,
+      _export: {
+        app: "gym-tracker",
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        counts,
+      },
+    };
+    downloadBlob(
+      JSON.stringify(payload, null, 2),
+      "application/json",
+      `gym-tracker-${fileStamp(true)}.json`
+    );
+  };
+
+  const handleExportCsv = () => {
+    if (!hydrated) return;
+    if (isEmpty && !window.confirm("Your data looks empty. Export anyway?")) {
+      return;
+    }
+    downloadBlob(
+      buildCsv(state, state.settings.unit),
+      "text/csv;charset=utf-8",
+      `gym-tracker-${fileStamp(false)}.csv`
+    );
   };
 
   const handleFile = async (file: File) => {
@@ -96,7 +153,14 @@ export function DataIO() {
   return (
     <>
       <div className="grid grid-cols-2 gap-2">
-        <Button variant="outline" onClick={handleExport}>
+        <Button
+          variant="outline"
+          onClick={handleExport}
+          disabled={!hydrated}
+          title={
+            hydrated ? "Download a full JSON backup" : "Loading your data…"
+          }
+        >
           <Download className="h-4 w-4" /> Export
         </Button>
         <Button
@@ -104,6 +168,15 @@ export function DataIO() {
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload className="h-4 w-4" /> Import
+        </Button>
+        <Button
+          variant="outline"
+          onClick={handleExportCsv}
+          disabled={!hydrated}
+          title="Download a spreadsheet (CSV) of workouts + food"
+          className="col-span-2"
+        >
+          <FileSpreadsheet className="h-4 w-4" /> Export CSV (spreadsheet)
         </Button>
         <input
           ref={fileInputRef}

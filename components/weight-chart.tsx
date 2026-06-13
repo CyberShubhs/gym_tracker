@@ -1,6 +1,7 @@
 "use client";
 
 import type { Unit, WeightLog } from "@/lib/types";
+import { weightTrend } from "@/lib/progress";
 
 export function WeightChart({
   logs,
@@ -13,6 +14,7 @@ export function WeightChart({
 
   const sorted = [...logs].sort((a, b) => a.date.localeCompare(b.date));
   const weights = sorted.map((l) => l.weight);
+  const { ma, ratePerWeek } = weightTrend(sorted);
   const min = Math.min(...weights);
   const max = Math.max(...weights);
   const pad = Math.max(0.5, (max - min) * 0.15);
@@ -35,6 +37,11 @@ export function WeightChart({
 
   const path = sorted
     .map((l, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(l.weight)}`)
+    .join(" ");
+
+  // Smoothed (moving-average) trend line — aligned 1:1 with the sorted points.
+  const maPath = ma
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.value)}`)
     .join(" ");
 
   const ticks = 4;
@@ -63,6 +70,13 @@ export function WeightChart({
         <span className={`font-mono text-xs ${trendColor}`}>
           {delta > 0 ? "+" : ""}
           {delta.toFixed(1)} {unit}
+          {ratePerWeek != null && Math.abs(ratePerWeek) >= 0.05 && (
+            <span className="text-muted-foreground">
+              {" "}
+              · ≈{ratePerWeek > 0 ? "+" : ""}
+              {ratePerWeek.toFixed(1)} {unit}/wk
+            </span>
+          )}
         </span>
       </div>
       <svg
@@ -94,6 +108,16 @@ export function WeightChart({
             </text>
           </g>
         ))}
+        {ma.length >= 2 && (
+          <path
+            d={maPath}
+            fill="none"
+            className="stroke-emerald-400/70"
+            strokeWidth={3}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        )}
         <path
           d={path}
           fill="none"

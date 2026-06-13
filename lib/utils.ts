@@ -22,6 +22,15 @@ export function formatDate(iso: string): string {
   });
 }
 
+// Local clock time (e.g. "6:42 PM") from an epoch-ms timestamp. Used for the
+// "time lifted" display on workout history.
+export function formatTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function shortDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const date = new Date(y, m - 1, d);

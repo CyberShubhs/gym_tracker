@@ -116,17 +116,57 @@ export function suggestCategory(name: string): FoodCategory | undefined {
   return undefined;
 }
 
+// Best preset match for a typed food name, used to offer one-tap macro
+// prefill in the custom-food dialog. Prefers an exact name, then a name that
+// starts with the query (so "banana" → "Banana (medium)"), then a looser
+// all-words-present match. Returns undefined when nothing is close.
+export function findFoodByName(name: string): FoodPreset | undefined {
+  const q = name.trim().toLowerCase();
+  if (q.length < 2) return undefined;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  let starts: FoodPreset | undefined;
+  let token: FoodPreset | undefined;
+  for (const p of FOOD_PRESETS) {
+    const n = p.name.toLowerCase();
+    if (n === q) return p;
+    if (!starts && n.startsWith(q)) starts = p;
+    if (!token && tokens.every((t) => n.includes(t))) token = p;
+  }
+  return starts ?? token;
+}
+
 // Macros per gram (or per piece for whole items). Reference numbers from
 // USDA FoodData Central (FDC) and Indian Food Composition Tables (IFCT) for
 // Indian-specific items. Sources are cited per-food so users can sanity-check
 // the values via the food detail modal. Numbers are scaled to per-unit; UI
 // rounds totals before display.
+
+// There is no per-colour bell-pepper emoji in Unicode (🫑 only reads as
+// green), so we draw a tiny bell-pepper SVG and recolour the body. Returned
+// as a data URL → rendered by <FoodIcon src=…>. Computed at module load from
+// code, so it never bloats stored profile JSON. Stem stays green for all.
+function pepperIcon(body: string): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
+    `<path d="M12 8C16.5 8 19 10.5 19 14.5C19 18 16.7 21 14.2 20.6C13.2 20.45 12.7 19.7 12 19.7C11.3 19.7 10.8 20.45 9.8 20.6C7.3 21 5 18 5 14.5C5 10.5 7.5 8 12 8Z" fill="${body}"/>` +
+    `<path d="M12 8.5C12 6 12.6 4.2 15 4" fill="none" stroke="#15803d" stroke-width="1.8" stroke-linecap="round"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+const BELL_PEPPER_ICON: Record<"red" | "yellow" | "green", string> = {
+  red: pepperIcon("#e23b3b"),
+  yellow: pepperIcon("#f2c037"),
+  green: pepperIcon("#36b34a"),
+};
+
 export const FOOD_PRESETS: FoodPreset[] = [
   // Veg (per gram)
   {
     id: "bell-red",
     name: "Bell pepper (red)",
-    emoji: "🌶️",
+    emoji: "🫑",
+    iconImageDataUrl: BELL_PEPPER_ICON.red,
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.31,
@@ -140,7 +180,8 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "bell-green",
     name: "Bell pepper (green)",
-    emoji: "🌶️",
+    emoji: "🫑",
+    iconImageDataUrl: BELL_PEPPER_ICON.green,
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.2,
@@ -154,7 +195,8 @@ export const FOOD_PRESETS: FoodPreset[] = [
   {
     id: "bell-yellow",
     name: "Bell pepper (yellow)",
-    emoji: "🌶️",
+    emoji: "🫑",
+    iconImageDataUrl: BELL_PEPPER_ICON.yellow,
     unit: "g",
     defaultAmount: 100,
     caloriesPer: 0.27,
