@@ -101,6 +101,20 @@ export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
     ],
   },
   {
+    id: "legs",
+    name: "Legs",
+    category: "legs",
+    focus:
+      "Lower body + core — quads, hamstrings, glutes, calves. The biggest muscles for shape, strength and calorie burn. (Uses your own leg templates if you've made any.)",
+    exercises: [
+      { id: "leg-press", name: "Leg Press", sets: 4, repsLow: 8, repsHigh: 12, equipment: "machine" },
+      { id: "rdl", name: "Romanian Deadlift", sets: 3, repsLow: 8, repsHigh: 12, equipment: "barbell" },
+      { id: "leg-curl", name: "Leg Curl", sets: 3, repsLow: 10, repsHigh: 15, equipment: "machine" },
+      { id: "calf-raise", name: "Calf Raise", sets: 4, repsLow: 12, repsHigh: 20, equipment: "machine" },
+      { id: "hanging-leg-raise", name: "Hanging Leg Raise", sets: 3, repsLow: 10, repsHigh: 15, equipment: "bodyweight" },
+    ],
+  },
+  {
     id: "rest-full",
     name: "Full Rest",
     category: "rest",
@@ -109,6 +123,11 @@ export const DEFAULT_TEMPLATES: WorkoutTemplate[] = [
   },
 ];
 
+// Weekday the Legs day is scheduled on (Saturday). Replaces the old
+// Saturday "upper-pump" so the week is Push / Pull / rest / Push / Pull /
+// Legs / rest — a balanced split with a dedicated lower-body day.
+export const LEG_DAY_DOW = 6;
+
 export const DEFAULT_SCHEDULE: Record<number, string> = {
   0: "rest-full",
   1: "push-strength",
@@ -116,7 +135,7 @@ export const DEFAULT_SCHEDULE: Record<number, string> = {
   3: "rest-light",
   4: "push-hyper",
   5: "pull-width",
-  6: "upper-pump",
+  6: "legs",
 };
 
 export const DEFAULT_TARGETS = {
@@ -131,7 +150,15 @@ export const DEFAULT_TARGETS = {
 // Bump whenever DEFAULT_TEMPLATES or DEFAULT_SCHEDULE changes meaningfully.
 // Existing user state is migrated to the new plan on next hydration; their
 // workout / food / weight logs are preserved unchanged.
-export const TEMPLATES_VERSION = 3;
+//
+// v4: added the dedicated Legs day (Saturday). Existing profiles get it via
+// the ADDITIVE merge in the store (maybeAddLegDay) which preserves their
+// templates, schedule and planning rather than resetting them.
+export const TEMPLATES_VERSION = 4;
+
+// One-time additive merge that inserts the Legs day into existing profiles
+// without wiping any data. Bump only if the additive step itself changes.
+export const LEG_DAY_MERGE_VERSION = 1;
 
 // Independent version for the leg-template seed. Seeded only when missing
 // AND the profile has no leg templates yet — deleting a default does NOT
@@ -217,6 +244,7 @@ export const REQUIRED_TEMPLATE_NAMES: Record<string, string> = {
   "push-hyper": "Push B — Hypertrophy",
   "pull-width": "Pull B — Hypertrophy",
   "upper-pump": "Upper Pump — Chest, Shoulders, Arms",
+  "legs": "Legs",
   "rest-full": "Full Rest",
 };
 
@@ -227,7 +255,7 @@ export const REQUIRED_SCHEDULE: Record<number, string> = {
   3: "rest-light",
   4: "push-hyper",
   5: "pull-width",
-  6: "upper-pump",
+  6: "legs",
 };
 
 // Old display names that should never be visible in the UI. Used by the

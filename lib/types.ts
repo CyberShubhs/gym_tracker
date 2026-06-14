@@ -221,6 +221,10 @@ export type Settings = {
   // profile. The seed only runs when this flag is missing AND the user has
   // zero leg templates — so deleting a default doesn't bring it back.
   legTemplatesSeededVersion?: number;
+  // Marks that the one-time additive "Legs day" merge has run for this
+  // profile (see maybeAddLegDay in lib/store.tsx). Guards the merge so it
+  // runs once and never re-fires.
+  legDayMergeVersion?: number;
   // Set to the current TEMPLATES_VERSION the moment a profile's
   // templates+schedule pass through migration successfully OR a brand-new
   // profile is created blank. While this is missing, the store treats the

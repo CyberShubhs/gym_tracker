@@ -30,6 +30,8 @@ import {
   DEFAULT_SCHEDULE,
   DEFAULT_SETTINGS,
   DEFAULT_TEMPLATES,
+  LEG_DAY_DOW,
+  LEG_DAY_MERGE_VERSION,
   LEG_TEMPLATES_SEED_VERSION,
   TEMPLATES_VERSION,
   needsTemplateMigration,
@@ -41,8 +43,9 @@ import {
   resetCurrentProfile,
   saveState,
 } from "./actions";
-import { plannedTemplate } from "./cycle";
+import { defaultCycleFor, plannedTemplate } from "./cycle";
 import { exerciseIdGroup } from "./exercise-aliases";
+import { todayISO } from "./utils";
 
 const CACHE_KEY = "gym-tracker:cache:v4";
 const ACTIVE_UID_COOKIE = "gt-uid";
@@ -98,6 +101,87 @@ function maybeSeedLegTemplates(
   };
 }
 
+// One-time ADDITIVE merge that adds the Legs day to an existing profile
+// WITHOUT wiping anything. This runs before the (destructive) version-bump
+// migration and, when it applies, stamps the version markers so that
+// migration never fires — preserving the user's templates, schedule, logs
+// and planning.
+//
+// It only takes the gentle merge path when the profile is otherwise valid
+// under the canonical rules (i.e. the *only* thing missing is the leg day).
+// If the templates are genuinely stale/corrupt, it defers to the normal
+// migration, which now rebuilds defaults that already include the leg day.
+function maybeAddLegDay(
+  s: AppState["settings"]
+): AppState["settings"] {
+  if ((s.legDayMergeVersion ?? 0) >= LEG_DAY_MERGE_VERSION) return s;
+
+  const templates = s.templates ?? [];
+  const schedule = s.schedule ?? {};
+  const hasLegsTemplate = templates.some((t) => t.category === "legs");
+  const scheduleHasLegs = schedule[LEG_DAY_DOW] === "legs";
+
+  // Already structured with a leg day (e.g. fresh profile from new defaults)
+  // — just stamp the marker so this never re-runs.
+  if (hasLegsTemplate && scheduleHasLegs) {
+    return { ...s, legDayMergeVersion: LEG_DAY_MERGE_VERSION };
+  }
+
+  // Only merge when the existing plan is valid apart from the leg day. Any
+  // other validation problem means there's no clean custom plan to preserve,
+  // so we defer to the destructive migration (which now includes the leg day).
+  const issues = validateTemplates(templates, schedule);
+  const onlyLegDayIssues =
+    templates.length > 0 &&
+    issues.every(
+      (i) =>
+        (i.code === "missing-template" && i.detail.includes('"legs"')) ||
+        (i.code === "wrong-schedule" &&
+          i.detail.startsWith(`schedule[${LEG_DAY_DOW}]`))
+    );
+  if (!onlyLegDayIssues) return s;
+
+  // Append the canonical Legs template (preserving every existing template)
+  // and point the leg-day weekday at it (preserving the other six days).
+  const canonicalLegs = DEFAULT_TEMPLATES.find((t) => t.id === "legs");
+  const mergedTemplates = canonicalLegs
+    ? [...templates, canonicalLegs]
+    : templates;
+  const mergedSchedule = { ...schedule, [LEG_DAY_DOW]: "legs" };
+
+  // Surface the leg day going forward WITHOUT touching planning history:
+  // keep all prior cycle segments and append one effective from today,
+  // built from the updated weekday schedule. Legacy cycle/anchor are left
+  // intact so dates before any segment still resolve exactly as before.
+  const today = todayISO();
+  const { cycle, anchor } = defaultCycleFor(
+    { ...s, schedule: mergedSchedule },
+    today
+  );
+  const priorSegments = (s.cycleSegments ?? []).filter(
+    (seg) => seg.effectiveFrom < today
+  );
+  const mergedSegments = [
+    ...priorSegments,
+    {
+      effectiveFrom: today,
+      cycle,
+      anchor,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+
+  return {
+    ...s,
+    templates: mergedTemplates,
+    schedule: mergedSchedule,
+    cycleSegments: mergedSegments,
+    templatesVersion: TEMPLATES_VERSION,
+    userTemplatesSeededVersion: TEMPLATES_VERSION,
+    legDayMergeVersion: LEG_DAY_MERGE_VERSION,
+  };
+}
+
 // Migrates user settings to the new upper-body plan whenever the templates
 // version is stale OR the saved templates don't pass validation (e.g. an
 // older JSON import wrote old names back over a freshly-migrated state).
@@ -109,7 +193,7 @@ function maybeSeedLegTemplates(
 // is left alone. That is how a freshly-created profile keeps its empty
 // `templates: []` instead of getting the global defaults poured back in.
 function migrateSettings(s: AppState["settings"]): AppState["settings"] {
-  const seeded = maybeSeedLegTemplates(s);
+  const seeded = maybeAddLegDay(maybeSeedLegTemplates(s));
   if (
     !needsTemplateMigration(
       seeded.templates,

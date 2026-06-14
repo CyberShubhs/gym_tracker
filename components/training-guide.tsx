@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { HelpCircle, PlayCircle } from "lucide-react";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,32 +11,33 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  MODE_DEFAULTS,
+  getExerciseGuide,
+  type Intent,
+} from "@/lib/exercise-guides";
+import { getExerciseTutorialUrl } from "@/lib/tutorial";
 import type { TemplateExercise } from "@/lib/types";
 
 // Detects roughly what training intent the exercise represents.
-function intentFor(exercise: TemplateExercise): "strength" | "hypertrophy" {
+function intentFor(exercise: TemplateExercise): Intent {
   // Treat low rep ranges (≤8 top) as strength, everything else as
   // hypertrophy / accessory.
   return exercise.repsHigh <= 8 ? "strength" : "hypertrophy";
 }
 
-const TIPS = {
-  strength: {
-    title: "Train for strength",
-    rest: "Rest 2–3 min between working sets so the next set isn't compromised.",
-    tempo:
-      "Lower under control (~2 sec), pause briefly, then drive up explosively but with clean form.",
-    progression:
-      "Add weight only when every prescribed set hits the top of the rep range with clean form.",
-  },
-  hypertrophy: {
-    title: "Train for hypertrophy",
-    rest: "Rest 60–90 sec — enough to recover, not so much you lose the pump.",
-    tempo:
-      "Slow, controlled lowering (~2–3 sec). Avoid rushing. Full range of motion beats bouncy partials.",
-    progression:
-      "Same rule: only add weight when every set hits the top of the rep range with clean form.",
-  },
+const INTENT_LABEL: Record<Intent, string> = {
+  strength: "Strength",
+  hypertrophy: "Hypertrophy",
+};
+
+// "When to add weight" copy — same rule for both intents, kept mode-keyed so
+// it can diverge later if needed.
+const PROGRESSION: Record<Intent, string> = {
+  strength:
+    "Add weight only when every prescribed set hits the top of the rep range with clean form.",
+  hypertrophy:
+    "Only add weight when every set hits the top of the rep range with clean form — otherwise add a rep.",
 };
 
 export function TrainingGuide({
@@ -48,7 +49,8 @@ export function TrainingGuide({
 }) {
   const [open, setOpen] = useState(false);
   const intent = intentFor(exercise);
-  const tips = TIPS[intent];
+  const guide = getExerciseGuide(exercise.id);
+  const tip = guide?.[intent] ?? MODE_DEFAULTS[intent];
   const repsRange =
     exercise.repsLow === exercise.repsHigh
       ? `${exercise.repsLow}`
@@ -70,17 +72,41 @@ export function TrainingGuide({
         <Dialog open onOpenChange={(o) => !o && setOpen(false)}>
           <DialogContent className="max-w-sm" data-no-swipe>
             <DialogHeader>
-              <DialogTitle>{tips.title}</DialogTitle>
+              <DialogTitle>{exercise.name}</DialogTitle>
               <DialogDescription>
-                Target {exercise.sets} sets of {repsRange} reps
+                {INTENT_LABEL[intent]} · {exercise.sets} sets of {repsRange} reps
                 {variantLabel ? ` · ${variantLabel}` : ""}.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 text-sm leading-relaxed">
-              <GuideRow label="Tempo">{tips.tempo}</GuideRow>
-              <GuideRow label="Rest">{tips.rest}</GuideRow>
+              {guide?.media?.gifSrc && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={guide.media.gifSrc}
+                  alt={`${exercise.name} form demonstration`}
+                  className="w-full rounded-md border border-border/60"
+                />
+              )}
+              {guide && (
+                <>
+                  <GuideRow label="Targets">{guide.targets}</GuideRow>
+                  <div>
+                    <RowLabel>How to</RowLabel>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-foreground/90">
+                      {guide.howTo.map((cue, i) => (
+                        <li key={i}>{cue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+              <GuideRow label="Tempo">{tip.tempo}</GuideRow>
+              <GuideRow label="Rest">{tip.rest}</GuideRow>
+              {guide && (
+                <GuideRow label="Common mistake">{guide.mistake}</GuideRow>
+              )}
               <GuideRow label="When to add weight">
-                {tips.progression}
+                {PROGRESSION[intent]}
               </GuideRow>
               <div className="rounded-md border border-border/60 bg-card/40 p-2.5 text-xs text-muted-foreground">
                 <p>
@@ -99,14 +125,29 @@ export function TrainingGuide({
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>
-                Got it
-              </Button>
+              <a
+                href={getExerciseTutorialUrl(exercise.name)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({ variant: "outline" })}
+              >
+                <PlayCircle />
+                Watch form video
+              </a>
+              <Button onClick={() => setOpen(false)}>Got it</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
     </>
+  );
+}
+
+function RowLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+      {children}
+    </p>
   );
 }
 
@@ -119,9 +160,7 @@ function GuideRow({
 }) {
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        {label}
-      </p>
+      <RowLabel>{label}</RowLabel>
       <p className="mt-0.5 text-foreground/90">{children}</p>
     </div>
   );
