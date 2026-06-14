@@ -9,6 +9,7 @@ import {
 } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { TemplateExercise, Unit } from "@/lib/types";
+import type { Intent } from "@/lib/exercise-guides";
 import { ExerciseCard } from "@/components/exercise-card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,9 @@ type Props = {
   // Stable identifier (e.g. templateId) used to remember the user's
   // currently-active exercise across navigation and refresh.
   positionKey?: string;
+  // The day's training intent (strength vs hypertrophy), forwarded to each
+  // card's "?" guide so a strength day reads as strength throughout.
+  intent?: Intent;
 };
 
 const AXIS_LOCK_THRESHOLD = 10; // px before deciding horizontal vs vertical
@@ -93,6 +97,7 @@ export function ExerciseCarousel({
   date,
   unit,
   positionKey,
+  intent,
 }: Props) {
   const count = exercises.length;
   const [rawIndex, setIndex] = useState(0);
@@ -364,6 +369,7 @@ export function ExerciseCarousel({
             current={current}
             date={date}
             unit={unit}
+            intent={intent}
             offset={progress * (trackWidth || 0)}
             transition={transition}
           />
@@ -376,6 +382,7 @@ export function ExerciseCarousel({
             right={nextExercise}
             date={date}
             unit={unit}
+            intent={intent}
             halfWidth={halfWidth}
           />
         )}
@@ -430,6 +437,7 @@ function CubeStage({
   right,
   date,
   unit,
+  intent,
   halfWidth,
 }: {
   angle: number;
@@ -439,6 +447,7 @@ function CubeStage({
   right: TemplateExercise | undefined;
   date: string;
   unit: Unit;
+  intent?: Intent;
   halfWidth: number;
 }) {
   // The front face renders in normal flow so its real height drives the
@@ -469,6 +478,7 @@ function CubeStage({
             exercise={front}
             date={date}
             unit={unit}
+            intent={intent}
           />
         )}
       </div>
@@ -532,12 +542,14 @@ function PlainSlide({
   current,
   date,
   unit,
+  intent,
   offset,
   transition,
 }: {
   current: TemplateExercise | undefined;
   date: string;
   unit: Unit;
+  intent?: Intent;
   offset: number;
   transition: string;
 }) {
@@ -556,6 +568,7 @@ function PlainSlide({
             exercise={current}
             date={date}
             unit={unit}
+            intent={intent}
           />
         )}
       </div>

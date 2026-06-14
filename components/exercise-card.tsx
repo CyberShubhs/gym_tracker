@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { getExerciseTutorialUrl } from "@/lib/tutorial";
 import type { Equipment, TemplateExercise, Unit, SetEntry } from "@/lib/types";
+import type { Intent } from "@/lib/exercise-guides";
 import { useStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -122,10 +123,12 @@ export const ExerciseCard = memo(function ExerciseCard({
   exercise,
   date,
   unit,
+  intent,
 }: {
   exercise: TemplateExercise;
   date: string;
   unit: Unit;
+  intent?: Intent;
 }) {
   const {
     state,
@@ -293,7 +296,11 @@ export const ExerciseCard = memo(function ExerciseCard({
             <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 opacity-60 transition-opacity group-hover/title:opacity-100" />
           </a>
           <div className="flex shrink-0 items-center gap-0.5">
-            <TrainingGuide exercise={exercise} variantLabel={variantLabel} />
+            <TrainingGuide
+              exercise={exercise}
+              variantLabel={variantLabel}
+              intent={intent}
+            />
             <ExercisePRDetail
               exercise={exercise}
               date={date}

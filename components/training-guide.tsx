@@ -43,12 +43,17 @@ const PROGRESSION: Record<Intent, string> = {
 export function TrainingGuide({
   exercise,
   variantLabel,
+  intent: intentProp,
 }: {
   exercise: TemplateExercise;
   variantLabel?: string;
+  // The day's training intent (strength vs hypertrophy). Driven by the
+  // template/day so a strength day reads as strength for every exercise.
+  // Falls back to per-exercise rep-range detection when not provided.
+  intent?: Intent;
 }) {
   const [open, setOpen] = useState(false);
-  const intent = intentFor(exercise);
+  const intent = intentProp ?? intentFor(exercise);
   const guide = getExerciseGuide(exercise.id);
   const tip = guide?.[intent] ?? MODE_DEFAULTS[intent];
   const repsRange =

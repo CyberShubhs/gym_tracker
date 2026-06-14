@@ -156,9 +156,13 @@ export const DEFAULT_TARGETS = {
 // templates, schedule and planning rather than resetting them.
 export const TEMPLATES_VERSION = 4;
 
-// One-time additive merge that inserts the Legs day into existing profiles
-// without wiping any data. Bump only if the additive step itself changes.
-export const LEG_DAY_MERGE_VERSION = 1;
+// One-time additive merge that folds the Legs day into the main split
+// without wiping any data. Bump when the additive step changes.
+//   v1: appended a canonical Legs template + scheduled it on Saturday.
+//   v2: replaces that Legs template's exercises with the user's own leg
+//       templates merged into one day (legs now lives in the main split,
+//       the separate Legs section is gone).
+export const LEG_DAY_MERGE_VERSION = 2;
 
 // Independent version for the leg-template seed. Seeded only when missing
 // AND the profile has no leg templates yet — deleting a default does NOT

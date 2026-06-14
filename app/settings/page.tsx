@@ -50,8 +50,6 @@ export default function SettingsPage() {
     updateSettings,
     upsertTemplate,
     removeTemplate,
-    upsertLegTemplate,
-    removeLegTemplate,
     resetAll,
   } = useStore();
 
@@ -311,8 +309,8 @@ export default function SettingsPage() {
       </SettingsSection>
 
       <SettingsSection
-        title="Upper body templates"
-        description="Edit names, exercises, target sets and rep ranges for upper-body days."
+        title="Templates"
+        description="Edit names, exercises, target sets and rep ranges for each day — push, pull and legs."
         summary={`${state.settings.templates.length} templates`}
       >
         <div className="space-y-3">
@@ -324,36 +322,7 @@ export default function SettingsPage() {
               onRemove={() => removeTemplate(t.id)}
             />
           ))}
-          <AddTemplate onAdd={upsertTemplate} idPrefix="upper" />
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title="Leg templates"
-        description="Standalone leg-day templates. Independent from upper-body templates."
-        summary={`${(state.settings.legTemplates ?? []).length} templates`}
-      >
-        <div className="space-y-3">
-          {(state.settings.legTemplates ?? []).length === 0 && (
-            <p className="rounded-md border border-dashed border-border/60 bg-card/40 px-3 py-4 text-center text-xs text-muted-foreground">
-              No leg templates yet. Create one to start logging leg
-              workouts. They will not appear in the upper-body list.
-            </p>
-          )}
-          {(state.settings.legTemplates ?? []).map((t) => (
-            <TemplateEditor
-              key={t.id}
-              template={t}
-              onChange={upsertLegTemplate}
-              onRemove={() => removeLegTemplate(t.id)}
-            />
-          ))}
-          <AddTemplate
-            onAdd={upsertLegTemplate}
-            idPrefix="leg"
-            categoryOverride="legs"
-            placeholder="New leg template name"
-          />
+          <AddTemplate onAdd={upsertTemplate} idPrefix="tpl" />
         </div>
       </SettingsSection>
 

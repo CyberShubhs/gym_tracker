@@ -409,3 +409,16 @@ export const EXERCISE_GUIDES: Record<string, ExerciseGuide> = {
 export function getExerciseGuide(id: string): ExerciseGuide | undefined {
   return EXERCISE_GUIDES[id];
 }
+
+// The training intent is a property of the DAY, not the individual exercise:
+// a strength day trains every exercise in the strength style even if some
+// accessories use higher reps. Strength templates are the "...-strength"
+// days (Push A / Pull A); everything else (hypertrophy, pump, legs, custom)
+// is hypertrophy.
+export function templateIntent(template: {
+  id?: string;
+  name?: string;
+}): Intent {
+  const hay = `${template.id ?? ""} ${template.name ?? ""}`.toLowerCase();
+  return /strength/.test(hay) ? "strength" : "hypertrophy";
+}

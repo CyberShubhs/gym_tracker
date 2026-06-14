@@ -101,16 +101,40 @@ function maybeSeedLegTemplates(
   };
 }
 
-// One-time ADDITIVE merge that adds the Legs day to an existing profile
-// WITHOUT wiping anything. This runs before the (destructive) version-bump
-// migration and, when it applies, stamps the version markers so that
-// migration never fires — preserving the user's templates, schedule, logs
-// and planning.
+// Merges the user's existing leg templates into ONE "Legs" day, folded into
+// the main split (Saturday). The user's separate leg templates are the source
+// of exercises; when there are none we fall back to the canonical default.
+// Returns [] when there's nothing usable so callers can fall back.
+function mergedLegExercises(
+  legTemplates: WorkoutTemplate[] | undefined
+): WorkoutTemplate["exercises"] {
+  const out: WorkoutTemplate["exercises"] = [];
+  const seen = new Set<string>();
+  for (const t of legTemplates ?? []) {
+    for (const ex of t.exercises ?? []) {
+      if (seen.has(ex.id)) continue;
+      seen.add(ex.id);
+      out.push(ex);
+    }
+  }
+  if (out.length > 0) return out;
+  return DEFAULT_TEMPLATES.find((t) => t.id === "legs")?.exercises ?? [];
+}
+
+// One-time ADDITIVE merge that folds the Legs day into the main split WITHOUT
+// wiping anything. Runs before the (destructive) version-bump migration and,
+// when it applies, stamps the version markers so that migration never fires —
+// preserving the user's templates, schedule, logs and planning.
 //
-// It only takes the gentle merge path when the profile is otherwise valid
-// under the canonical rules (i.e. the *only* thing missing is the leg day).
-// If the templates are genuinely stale/corrupt, it defers to the normal
-// migration, which now rebuilds defaults that already include the leg day.
+// It builds a single "Legs" template from the user's own leg templates (or
+// the canonical default), drops it into the main `templates` list and points
+// Saturday at it. The user's separate `legTemplates` are left in place (dormant)
+// so older leg logs still resolve their names in History. Upper Pump stays in
+// `templates` (still pickable) but is no longer on the weekly schedule.
+//
+// Only takes this gentle path when the plan is valid apart from the leg day;
+// a genuinely stale/corrupt plan is deferred to the destructive migration
+// (which now rebuilds defaults that already include the leg day).
 function maybeAddLegDay(
   s: AppState["settings"]
 ): AppState["settings"] {
@@ -118,64 +142,69 @@ function maybeAddLegDay(
 
   const templates = s.templates ?? [];
   const schedule = s.schedule ?? {};
-  const hasLegsTemplate = templates.some((t) => t.category === "legs");
-  const scheduleHasLegs = schedule[LEG_DAY_DOW] === "legs";
+  if (templates.length === 0) return s; // blank profile — leave it alone.
 
-  // Already structured with a leg day (e.g. fresh profile from new defaults)
-  // — just stamp the marker so this never re-runs.
-  if (hasLegsTemplate && scheduleHasLegs) {
-    return { ...s, legDayMergeVersion: LEG_DAY_MERGE_VERSION };
-  }
-
-  // Only merge when the existing plan is valid apart from the leg day. Any
-  // other validation problem means there's no clean custom plan to preserve,
-  // so we defer to the destructive migration (which now includes the leg day).
-  const issues = validateTemplates(templates, schedule);
-  const onlyLegDayIssues =
-    templates.length > 0 &&
-    issues.every(
-      (i) =>
+  // Defer to the destructive migration only if there's a problem *other* than
+  // the leg day (e.g. a renamed/missing required template). A profile that
+  // already has the leg day (v1) reports zero issues and still proceeds here,
+  // so v2 can replace the canonical exercises with the user's own.
+  const nonLegIssues = validateTemplates(templates, schedule).filter(
+    (i) =>
+      !(
         (i.code === "missing-template" && i.detail.includes('"legs"')) ||
         (i.code === "wrong-schedule" &&
           i.detail.startsWith(`schedule[${LEG_DAY_DOW}]`))
-    );
-  if (!onlyLegDayIssues) return s;
+      )
+  );
+  if (nonLegIssues.length > 0) return s;
 
-  // Append the canonical Legs template (preserving every existing template)
-  // and point the leg-day weekday at it (preserving the other six days).
+  // Build the single Legs day from the user's own leg templates.
   const canonicalLegs = DEFAULT_TEMPLATES.find((t) => t.id === "legs");
-  const mergedTemplates = canonicalLegs
-    ? [...templates, canonicalLegs]
-    : templates;
+  const legsTemplate: WorkoutTemplate = {
+    id: "legs",
+    name: "Legs",
+    category: "legs",
+    focus:
+      canonicalLegs?.focus ??
+      "Lower body + core — quads, hamstrings, glutes, calves.",
+    exercises: mergedLegExercises(s.legTemplates),
+  };
+  // Replace any existing "legs" template (the v1 canonical one) and keep every
+  // other template — including the now-archived Upper Pump.
+  const mergedTemplates = [
+    ...templates.filter((t) => t.id !== "legs"),
+    legsTemplate,
+  ];
+
+  const scheduleHadLegs = schedule[LEG_DAY_DOW] === "legs";
   const mergedSchedule = { ...schedule, [LEG_DAY_DOW]: "legs" };
 
-  // Surface the leg day going forward WITHOUT touching planning history:
-  // keep all prior cycle segments and append one effective from today,
-  // built from the updated weekday schedule. Legacy cycle/anchor are left
-  // intact so dates before any segment still resolve exactly as before.
-  const today = todayISO();
-  const { cycle, anchor } = defaultCycleFor(
-    { ...s, schedule: mergedSchedule },
-    today
-  );
-  const priorSegments = (s.cycleSegments ?? []).filter(
-    (seg) => seg.effectiveFrom < today
-  );
-  const mergedSegments = [
-    ...priorSegments,
-    {
-      effectiveFrom: today,
-      cycle,
-      anchor,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  // Only touch planning the first time the schedule actually changes (v1).
+  // When legs was already scheduled, planning is already correct — appending
+  // again would stack a redundant segment.
+  let cycleSegments = s.cycleSegments;
+  if (!scheduleHadLegs) {
+    // Surface the leg day going forward WITHOUT touching planning history:
+    // keep all prior segments and append one effective from today.
+    const today = todayISO();
+    const { cycle, anchor } = defaultCycleFor(
+      { ...s, schedule: mergedSchedule },
+      today
+    );
+    const priorSegments = (s.cycleSegments ?? []).filter(
+      (seg) => seg.effectiveFrom < today
+    );
+    cycleSegments = [
+      ...priorSegments,
+      { effectiveFrom: today, cycle, anchor, createdAt: new Date().toISOString() },
+    ];
+  }
 
   return {
     ...s,
     templates: mergedTemplates,
     schedule: mergedSchedule,
-    cycleSegments: mergedSegments,
+    cycleSegments,
     templatesVersion: TEMPLATES_VERSION,
     userTemplatesSeededVersion: TEMPLATES_VERSION,
     legDayMergeVersion: LEG_DAY_MERGE_VERSION,
