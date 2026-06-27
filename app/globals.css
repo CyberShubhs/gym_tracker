@@ -129,15 +129,10 @@
   }
   body {
     @apply bg-background text-foreground;
-    /* Forge: a soft warm-amber glow bleeding down from the top of the screen,
-       layered over the base background colour. Fixed so it doesn't scroll. */
-    background-image: radial-gradient(
-      120% 70% at 50% -10%,
-      oklch(0.32 0.05 75 / 0.35),
-      transparent 55%
-    );
-    background-attachment: fixed;
-    background-repeat: no-repeat;
+    /* NOTE: do NOT put `background-attachment: fixed` here. On iOS WebKit it
+       breaks every `position: fixed` descendant (the floating tab bar gets
+       painted mid-page instead of pinned to the viewport). The Forge glow is
+       rendered as a separate fixed layer in app/layout.tsx instead. */
     /* iOS Safari: no grey flash on tap, no rubber-band scroll behind the
        fixed bottom nav when running as a home-screen app. */
     -webkit-tap-highlight-color: transparent;

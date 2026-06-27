@@ -49,6 +49,18 @@ export default function RootLayout({
       className={`${forgeSans.variable} ${forgeMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
+        {/* Forge warm-amber glow as its own fixed layer behind the app, so we
+            don't need `background-attachment: fixed` on <body> (which breaks
+            position:fixed on iOS). pointer-events-none + -z-10 keep it inert
+            and behind all content. */}
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 -z-10"
+          style={{
+            backgroundImage:
+              "radial-gradient(120% 70% at 50% -10%, oklch(0.32 0.05 75 / 0.35), transparent 55%)",
+          }}
+        />
         <StoreProvider>
           <RestTimerProvider>
             <AppShell>{children}</AppShell>
