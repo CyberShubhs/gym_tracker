@@ -218,7 +218,7 @@ function RestTimerBar() {
     <div
       className="pointer-events-none fixed inset-x-0 z-40 mx-auto max-w-2xl px-4"
       style={{
-        bottom: "calc(72px + env(safe-area-inset-bottom))",
+        bottom: "calc(96px + env(safe-area-inset-bottom))",
       }}
     >
       <div className="pointer-events-auto rounded-xl border border-border/60 bg-card/95 backdrop-blur shadow-lg">
