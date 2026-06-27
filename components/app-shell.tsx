@@ -22,12 +22,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hideNav = pathname === "/login" || pathname.startsWith("/select");
 
-  // iOS-26-style floating tab bar. It sits full size (icon + label) at the top
-  // of a page, then shrinks into a compact icons-only pill while you scroll
-  // down through content (food log, workout sets…), and pops back to full size
-  // when you scroll up, reach the top, or tap it. Just a presentation toggle —
-  // every tab and link behaves exactly as before.
-  const [collapsed, setCollapsed] = useState(false);
+  // Floating tab bar, iOS-26 style. At rest it's a compact pill showing only
+  // the current tab's icon. Tap it to reveal all four tabs; pick one and it
+  // collapses again. It NEVER auto-expands — scrolling or moving between pages
+  // always leaves it in the compact pill, so it stays out of the way while you
+  // log food or sets. Purely a presentation toggle; navigation is unchanged.
+  const [expanded, setExpanded] = useState(false);
   const lastY = useRef(0);
 
   useEffect(() => {
@@ -39,12 +39,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .catch(() => undefined);
   }, []);
 
-  // Landing on a new tab puts you at the top, so start expanded.
+  // Switching tabs collapses the bar — each page starts as the compact pill.
   useEffect(() => {
-    setCollapsed(false);
+    setExpanded(false);
     lastY.current = typeof window !== "undefined" ? window.scrollY : 0;
   }, [pathname]);
 
+  // Any scroll collapses it back to the compact pill. It only ever grows again
+  // when the user taps it — there is deliberately no scroll-up / at-top expand.
   useEffect(() => {
     if (hideNav) return;
     let ticking = false;
@@ -53,16 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ticking = true;
       requestAnimationFrame(() => {
         const y = window.scrollY;
-        const delta = y - lastY.current;
-        // Near the top → always expanded. Otherwise collapse on a downward
-        // scroll and expand on an upward one (small threshold debounces jitter).
-        if (y < 32) {
-          setCollapsed(false);
-        } else if (delta > 8) {
-          setCollapsed(true);
-        } else if (delta < -8) {
-          setCollapsed(false);
-        }
+        if (Math.abs(y - lastY.current) > 4) setExpanded(false);
         lastY.current = y;
         ticking = false;
       });
@@ -74,6 +67,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (hideNav) {
     return <>{children}</>;
   }
+
+  const activeHref = (
+    NAV.find((item) =>
+      item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+    ) ?? NAV[0]
+  ).href;
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col">
@@ -95,27 +94,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ bottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
       >
         <div
-          onPointerDown={() => setCollapsed(false)}
+          onClick={() => {
+            if (!expanded) setExpanded(true);
+          }}
           className={cn(
             "pointer-events-auto flex items-center rounded-[26px] border border-border/60 bg-background/70 shadow-[0_12px_44px_-12px_rgba(0,0,0,0.75)] backdrop-blur-2xl transition-all duration-300 ease-out",
-            collapsed ? "gap-1 p-1.5" : "gap-1.5 p-2"
+            expanded ? "gap-1.5 p-2" : "gap-0 p-1.5"
           )}
         >
           {NAV.map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
+            const active = item.href === activeHref;
             const Icon = item.icon;
+            // Collapsed: only the active tab is visible; the rest shrink away to
+            // zero width. Tapping the visible icon expands the bar instead of
+            // navigating (it's already the current page).
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
+                tabIndex={!expanded && !active ? -1 : 0}
+                onClick={(e) => {
+                  if (!expanded) {
+                    e.preventDefault();
+                    setExpanded(true);
+                  } else {
+                    setExpanded(false);
+                  }
+                }}
                 className={cn(
-                  "flex flex-col items-center justify-center rounded-2xl transition-all duration-300 ease-out",
-                  collapsed ? "h-11 w-11 gap-0" : "h-14 w-16 gap-1",
+                  "flex flex-col items-center justify-center overflow-hidden rounded-2xl transition-all duration-300 ease-out",
+                  expanded
+                    ? "h-14 w-16 gap-1 opacity-100"
+                    : active
+                      ? "h-12 w-12 gap-0 opacity-100"
+                      : "pointer-events-none h-12 w-0 gap-0 opacity-0",
                   active
                     ? "bg-primary/15 text-primary"
                     : "text-muted-foreground active:bg-muted/40"
@@ -124,16 +138,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Icon
                   className={cn(
                     "transition-all duration-300",
-                    collapsed ? "h-[22px] w-[22px]" : "h-[19px] w-[19px]"
+                    expanded ? "h-[19px] w-[19px]" : "h-[22px] w-[22px]"
                   )}
                   strokeWidth={active ? 2.4 : 2}
                 />
                 <span
                   className={cn(
                     "overflow-hidden font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.06em] transition-all duration-300 ease-out",
-                    collapsed
-                      ? "max-h-0 opacity-0"
-                      : "max-h-3 opacity-100"
+                    expanded ? "max-h-3 opacity-100" : "max-h-0 opacity-0"
                   )}
                 >
                   {item.label}
