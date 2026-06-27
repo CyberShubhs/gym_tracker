@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   Dumbbell,
   Settings as SettingsIcon,
   Timer,
@@ -11,17 +12,22 @@ import {
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { todayISO, formatDate, cn } from "@/lib/utils";
-import { CATEGORY_ACCENT, CATEGORY_LABEL, DAY_NAMES } from "@/lib/defaults";
-import { ExerciseCarousel } from "@/components/exercise-carousel";
+import { CATEGORY_LABEL, DAY_NAMES } from "@/lib/defaults";
+import { ExerciseCard } from "@/components/exercise-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { RecoveryCard } from "@/components/recovery-card";
 import { SaveIndicator } from "@/components/save-indicator";
 import { DateNav } from "@/components/date-nav";
 import { plannedTemplate, shiftFutureCycleTo } from "@/lib/cycle";
-import { templateIntent } from "@/lib/exercise-guides";
+import { templateIntent, type Intent } from "@/lib/exercise-guides";
 import { useRestTimer } from "@/components/rest-timer";
-import type { TemplateExercise, WorkoutTemplate } from "@/lib/types";
+import type {
+  SetEntry,
+  TemplateExercise,
+  Unit,
+  WorkoutTemplate,
+} from "@/lib/types";
 
 export default function WorkoutPage() {
   const { hydrated, state, ensureWorkoutLog, markRestComplete, updateSettings } =
@@ -92,31 +98,43 @@ export default function WorkoutPage() {
 
   const completed = !!log?.completedRest;
 
+  // Overall session progress = logged sets / prescribed sets across the day's
+  // exercises. Drives the Forge header bar and the "n/m sets" read-out.
+  const sessionExercises =
+    showWorkout && template ? template.exercises : [];
+  const totalDoneSets = sessionExercises.reduce(
+    (s, e) => s + validSets(log?.entries?.[e.id]),
+    0
+  );
+  const totalTargetSets = sessionExercises.reduce((s, e) => s + e.sets, 0);
+  const sessionPct =
+    totalTargetSets > 0
+      ? Math.min(100, Math.round((totalDoneSets / totalTargetSets) * 100))
+      : 0;
+
   return (
     <div className="space-y-4">
       <header className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              {DAY_NAMES[dayOfWeek]} · Workout
-            </p>
-            <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-              {template?.name ?? "Rest"}
-            </h1>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {formatDate(date)}
-              <SaveIndicator />
-            </p>
-          </div>
-          {template && (
-            <div
-              className={cn(
-                "shrink-0 rounded-full border px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider",
-                CATEGORY_ACCENT[template.category]
-              )}
-            >
-              {CATEGORY_LABEL[template.category]}
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary/90">
+            {template
+              ? `${CATEGORY_LABEL[template.category]} · ${totalDoneSets}/${totalTargetSets} sets`
+              : `${DAY_NAMES[dayOfWeek]} · Rest`}
+          </p>
+          <h1 className="mt-1 truncate text-2xl font-extrabold tracking-tight sm:text-3xl">
+            {template?.name ?? "Rest"}
+          </h1>
+          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CalendarDays className="h-3.5 w-3.5" />
+            {formatDate(date)}
+            <SaveIndicator />
+          </p>
+          {showWorkout && totalTargetSets > 0 && (
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${sessionPct}%` }}
+              />
             </div>
           )}
         </div>
@@ -147,11 +165,10 @@ export default function WorkoutPage() {
       {hasNoTemplates ? (
         <NoTemplatesState />
       ) : showWorkout && template && template.exercises.length > 0 ? (
-        <ExerciseCarousel
+        <WorkoutSession
           exercises={template.exercises as TemplateExercise[]}
           date={date}
           unit={state.settings.unit}
-          positionKey={template.id}
           intent={templateIntent(template)}
         />
       ) : isRestDay ? (
@@ -173,14 +190,14 @@ export default function WorkoutPage() {
             {restActive ? "Resting…" : "Rest 90s"}
           </Button>
           <Button
-            variant={completed ? "default" : "secondary"}
+            variant="default"
             size="lg"
-            className="h-12"
+            className={cn("h-12", completed && "opacity-90")}
             onClick={() => markRestComplete(date, !completed)}
             aria-label="Mark workout complete"
           >
             <Check className="h-4 w-4" />
-            {completed ? "Workout saved" : "Mark complete"}
+            {completed ? "Workout saved" : "Finish workout"}
           </Button>
         </div>
       )}
@@ -276,6 +293,112 @@ function RestState() {
       >
         Back home
       </Link>
+    </div>
+  );
+}
+
+// A set counts as "done" once it has a finite weight and a positive rep count —
+// the same validity rule the store uses when persisting sets.
+function validSets(entries: SetEntry[] | undefined): number {
+  if (!entries) return 0;
+  return entries.filter(
+    (s) => Number.isFinite(s.weight) && Number.isFinite(s.reps) && s.reps > 0
+  ).length;
+}
+
+// Forge-style workout tracking: a vertical accordion of exercises. The
+// collapsed header shows live "done/target" sets; expanding reveals the full
+// existing ExerciseCard, so every feature it owns — set logging, PR detection,
+// variant tracking, progression hints, the training guide, notes and the rest
+// timer — is preserved verbatim. Only the navigation model changed (a tap-to-
+// expand list instead of the swipe carousel).
+function WorkoutSession({
+  exercises,
+  date,
+  unit,
+  intent,
+}: {
+  exercises: TemplateExercise[];
+  date: string;
+  unit: Unit;
+  intent?: Intent;
+}) {
+  const { state } = useStore();
+  const log = state.workoutLogs[date];
+  const [expanded, setExpanded] = useState<string | null>(
+    () => exercises[0]?.id ?? null
+  );
+
+  // Keep the open card pointing at an exercise that still exists when the
+  // template (or the day) changes; otherwise fall back to the first one.
+  useEffect(() => {
+    setExpanded((cur) =>
+      cur && exercises.some((e) => e.id === cur)
+        ? cur
+        : (exercises[0]?.id ?? null)
+    );
+  }, [exercises]);
+
+  return (
+    <div className="space-y-2.5">
+      {exercises.map((ex) => {
+        const done = validSets(log?.entries?.[ex.id]);
+        const complete = ex.sets > 0 && done >= ex.sets;
+        const isOpen = expanded === ex.id;
+        const repsTarget =
+          ex.repsLow === ex.repsHigh
+            ? `${ex.repsLow}`
+            : `${ex.repsLow}–${ex.repsHigh}`;
+        return (
+          <div key={ex.id} className="space-y-2.5">
+            <button
+              type="button"
+              onClick={() => setExpanded(isOpen ? null : ex.id)}
+              aria-expanded={isOpen}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-colors active:scale-[0.99]",
+                complete
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-border/60 bg-card"
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border font-mono text-[13px] font-bold tabular-nums",
+                  complete
+                    ? "border-primary/40 bg-primary/15 text-primary"
+                    : "border-border/60 bg-secondary text-muted-foreground"
+                )}
+              >
+                {done}/{ex.sets}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-semibold">
+                  {ex.name}
+                </span>
+                <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {ex.equipment ? `${ex.equipment} · ` : ""}
+                  {ex.sets}×{repsTarget}
+                </span>
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-[18px] w-[18px] shrink-0 text-muted-foreground transition-transform",
+                  isOpen && "rotate-180"
+                )}
+              />
+            </button>
+            {isOpen && (
+              <ExerciseCard
+                exercise={ex}
+                date={date}
+                unit={unit}
+                intent={intent}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

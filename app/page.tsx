@@ -7,9 +7,11 @@ import {
   ArrowRight,
   Beef,
   CalendarDays,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Droplets,
+  Dumbbell,
   Flame,
   Footprints,
   Leaf,
@@ -19,8 +21,9 @@ import {
   Wheat,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { todayISO, formatDate, cn } from "@/lib/utils";
+import { addDays, todayISO, formatDate, shortDate, cn } from "@/lib/utils";
 import { CATEGORY_ACCENT, CATEGORY_LABEL, DAY_NAMES } from "@/lib/defaults";
+import type { WorkoutTemplate } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card } from "@/components/ui/card";
 import { WeightPill } from "@/components/weight-pill";
@@ -28,7 +31,6 @@ import { HeightPill } from "@/components/height-pill";
 import { StreakBar } from "@/components/streak-bar";
 import { BmiBar } from "@/components/bmi-bar";
 import { SaveIndicator } from "@/components/save-indicator";
-import { DateNav } from "@/components/date-nav";
 import {
   avgCaloriesLastN,
   daysSinceLastWorkout,
@@ -122,6 +124,19 @@ export default function HomePage() {
   const wFlags = lastNDayFlags(state, date, 7, "workout");
   const fFlags = lastNDayFlags(state, date, 7, "food");
 
+  // Forge header: relative day label + date-nav bounds (mirrors DateNav so the
+  // chevrons here behave identically — 14-day forward cap, jump-to-today).
+  const todayDate = todayISO();
+  const relLabel =
+    date === todayDate
+      ? "Today"
+      : date === addDays(todayDate, -1)
+        ? "Yesterday"
+        : date === addDays(todayDate, 1)
+          ? "Tomorrow"
+          : DAY_NAMES[dayOfWeek];
+  const atForwardLimit = date >= addDays(todayDate, 14);
+
   const { current: currentWeight, delta: weight7Delta } = weightDelta(
     state,
     date,
@@ -180,75 +195,74 @@ export default function HomePage() {
 
   return (
     <div className="space-y-4">
-      <header className="space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
-              {DAY_NAMES[dayOfWeek]}
+      <header className="flex items-center justify-between gap-2 pt-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setDate(addDays(date, -1))}
+            aria-label="Previous day"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary text-muted-foreground transition active:scale-90"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setDate(todayDate)}
+            className="min-w-0 flex-1 text-center"
+            aria-label="Jump to today"
+          >
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              {DAY_NAMES[dayOfWeek]} · {shortDate(date)}
             </p>
-            <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">
-              Home
+            <h1 className="truncate text-2xl font-extrabold tracking-tight">
+              {relLabel}
             </h1>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              {formatDate(date)}
-              <SaveIndicator />
-            </p>
-          </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDate(addDays(date, 1))}
+            disabled={atForwardLimit}
+            aria-label="Next day"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-secondary text-muted-foreground transition active:scale-90 disabled:opacity-40"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
-        <DateNav date={date} onChange={(d) => setDate(d)} />
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5 rounded-full border border-primary/30 bg-accent/60 px-3 py-1.5">
+            <Flame className="h-3.5 w-3.5 text-primary" />
+            <span className="font-mono text-sm font-semibold tabular-nums text-primary">
+              {ws}
+            </span>
+          </div>
+          <SaveIndicator />
+        </div>
       </header>
 
-      {/* Today's workout — primary call-to-action card */}
-      <Link
-        href="/workout"
-        className="group block focus-visible:outline-none"
-        aria-label="Open today's workout"
-      >
-        <Card className="relative overflow-hidden border-border/70 transition-colors group-hover:border-foreground/40 group-focus-visible:border-foreground/60">
-          <div className="flex items-stretch gap-3 px-4">
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                  Today&apos;s workout
-                </span>
-                {template && (
-                  <span
-                    className={cn(
-                      "rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider",
-                      CATEGORY_ACCENT[template.category]
-                    )}
-                  >
-                    {CATEGORY_LABEL[template.category]}
-                  </span>
-                )}
-              </div>
-              <p className="truncate text-xl font-semibold leading-tight">
-                {template?.name ?? "Rest day"}
-              </p>
-              <p className="font-mono text-[11px] text-muted-foreground">
-                {totalExercises > 0
-                  ? `${completedExercises}/${totalExercises} exercises · ${totalSets}/${targetSets} sets`
-                  : "Recovery scheduled"}
-              </p>
-              {totalExercises > 0 && (
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-foreground transition-all"
-                    style={{ width: `${workoutPct}%` }}
-                  />
-                </div>
-              )}
-            </div>
-            <div className="flex items-center self-center">
-              <span className="inline-flex items-center justify-center rounded-full border border-border/60 bg-card/60 px-3 py-2 text-sm font-medium transition-colors group-hover:border-foreground/40">
-                Start
-                <ArrowRight className="ml-1 h-3.5 w-3.5" />
-              </span>
-            </div>
-          </div>
-        </Card>
-      </Link>
+      {/* Forge hero — calorie ring + protein + macro minis */}
+      <CalorieRingHero
+        calConsumed={calConsumed}
+        calTarget={targets.calories}
+        calRemaining={calRemaining}
+        proConsumed={proConsumed}
+        proteinTarget={targets.proteinG}
+        carbs={carbs}
+        carbsTarget={targets.carbsG ?? 280}
+        fats={fats}
+        fatsTarget={targets.fatsG ?? 70}
+        fibre={fibre}
+        fiberTarget={targets.fiberG ?? 30}
+      />
+
+      {/* Today's training — Forge call-to-action */}
+      <ForgeTrainingCard
+        template={template}
+        completedExercises={completedExercises}
+        totalExercises={totalExercises}
+        totalSets={totalSets}
+        targetSets={targetSets}
+        workoutPct={workoutPct}
+      />
 
       {/* Apple Health — compact daily activity */}
       <div className="space-y-1.5">
@@ -303,54 +317,6 @@ export default function HomePage() {
           </Card>
         )}
       </div>
-
-      {/* Calories + Protein primary nutrition cards */}
-      <div className="grid grid-cols-2 gap-2">
-        <StatCard
-          href="/food"
-          icon={<Flame className="h-3.5 w-3.5 text-rose-400" />}
-          label="Calories left"
-          value={`${calRemaining}`}
-          unit="kcal"
-          progress={Math.min(100, (calConsumed / targets.calories) * 100)}
-          progressColor="bg-rose-500"
-          sub={`${Math.round(calConsumed)} / ${targets.calories}`}
-        />
-        <StatCard
-          href="/food"
-          icon={<Beef className="h-3.5 w-3.5 text-orange-400" />}
-          label="Protein"
-          value={`${Math.round(proConsumed)}`}
-          unit="g"
-          progress={Math.min(100, (proConsumed / targets.proteinG) * 100)}
-          progressColor="bg-orange-500"
-          sub={`target ${targets.proteinG}g`}
-        />
-      </div>
-
-      {/* Quick macro row */}
-      <Card className="border-border/70">
-        <div className="grid grid-cols-3 gap-2 px-4">
-          <MacroMini
-            icon={<Wheat className="h-3 w-3 text-amber-400" />}
-            label="Carbs"
-            value={carbs}
-            target={targets.carbsG ?? 280}
-          />
-          <MacroMini
-            icon={<Droplets className="h-3 w-3 text-yellow-300" />}
-            label="Fats"
-            value={fats}
-            target={targets.fatsG ?? 70}
-          />
-          <MacroMini
-            icon={<Leaf className="h-3 w-3 text-emerald-400" />}
-            label="Fibre"
-            value={fibre}
-            target={targets.fiberG ?? 30}
-          />
-        </div>
-      </Card>
 
       <StreakBar
         workoutStreak={ws}
@@ -644,5 +610,229 @@ function MiniCard({
         )}
       </div>
     </Card>
+  );
+}
+
+function pctOf(value: number, target: number): number {
+  return Math.min(100, Math.round((value / Math.max(target, 1)) * 100));
+}
+
+// The Forge home hero: a big amber calorie ring (kcal remaining) paired with
+// the eaten/target read-out, a protein bar, and three macro minis. Tapping it
+// opens the Food tab. Pure presentation over the same numbers the old stat
+// cards showed — nothing about logging or storage changes.
+function CalorieRingHero({
+  calConsumed,
+  calTarget,
+  calRemaining,
+  proConsumed,
+  proteinTarget,
+  carbs,
+  carbsTarget,
+  fats,
+  fatsTarget,
+  fibre,
+  fiberTarget,
+}: {
+  calConsumed: number;
+  calTarget: number;
+  calRemaining: number;
+  proConsumed: number;
+  proteinTarget: number;
+  carbs: number;
+  carbsTarget: number;
+  fats: number;
+  fatsTarget: number;
+  fibre: number;
+  fiberTarget: number;
+}) {
+  const CIRC = 326.726; // 2πr for r=52
+  const calPct = Math.min(1, calTarget > 0 ? calConsumed / calTarget : 0);
+  const ringOffset = (CIRC * (1 - calPct)).toFixed(1);
+  const proPct = pctOf(proConsumed, proteinTarget);
+  const minis = [
+    { label: "Carbs", val: Math.round(carbs), pct: pctOf(carbs, carbsTarget) },
+    { label: "Fat", val: Math.round(fats), pct: pctOf(fats, fatsTarget) },
+    { label: "Fibre", val: Math.round(fibre), pct: pctOf(fibre, fiberTarget) },
+  ];
+  return (
+    <Link
+      href="/food"
+      className="group block focus-visible:outline-none"
+      aria-label="Open nutrition"
+    >
+      <div className="rounded-3xl border border-border/70 bg-gradient-to-b from-card to-secondary/40 p-5 shadow-[inset_0_1px_0_oklch(1_0_0/0.05)] transition-transform group-active:scale-[0.99]">
+        <div className="flex items-center gap-5">
+          <div className="relative h-[124px] w-[124px] shrink-0">
+            <svg
+              width="124"
+              height="124"
+              viewBox="0 0 120 120"
+              className="-rotate-90"
+            >
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                fill="none"
+                stroke="oklch(0.3 0.008 70)"
+                strokeWidth="11"
+              />
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                fill="none"
+                stroke="var(--primary)"
+                strokeWidth="11"
+                strokeLinecap="round"
+                strokeDasharray={CIRC}
+                strokeDashoffset={ringOffset}
+                style={{
+                  transition: "stroke-dashoffset 0.6s cubic-bezier(.4,0,.2,1)",
+                }}
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-3xl font-extrabold leading-none tabular-nums tracking-tight">
+                {calRemaining}
+              </span>
+              <span className="mt-1 font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                kcal left
+              </span>
+            </div>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              Eaten
+            </p>
+            <p className="mt-1 text-xl font-bold tabular-nums">
+              {Math.round(calConsumed)}{" "}
+              <span className="text-sm font-medium text-muted-foreground">
+                / {calTarget}
+              </span>
+            </p>
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  Protein
+                </span>
+                <span className="font-mono text-xs font-semibold tabular-nums text-primary">
+                  {Math.round(proConsumed)}
+                  <span className="text-muted-foreground">/{proteinTarget}g</span>
+                </span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${proPct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="mt-5 flex gap-2.5">
+          {minis.map((m) => (
+            <div
+              key={m.label}
+              className="flex-1 rounded-2xl bg-background/50 p-2.5"
+            >
+              <div className="flex items-baseline justify-between">
+                <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+                  {m.label}
+                </span>
+                <span className="font-mono text-[11px] font-semibold tabular-nums">
+                  {m.val}
+                  <span className="text-[9px] text-muted-foreground">g</span>
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-muted-foreground/70"
+                  style={{ width: `${m.pct}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// Forge "Today's training" CTA. Same scheduled-template data as before, just
+// the amber-tinted card with an inline progress bar; tap opens the Workout tab.
+function ForgeTrainingCard({
+  template,
+  completedExercises,
+  totalExercises,
+  totalSets,
+  targetSets,
+  workoutPct,
+}: {
+  template: WorkoutTemplate | undefined;
+  completedExercises: number;
+  totalExercises: number;
+  totalSets: number;
+  targetSets: number;
+  workoutPct: number;
+}) {
+  return (
+    <Link
+      href="/workout"
+      className="group block focus-visible:outline-none"
+      aria-label="Open today's workout"
+    >
+      <div className="relative overflow-hidden rounded-3xl border border-primary/25 bg-gradient-to-br from-accent/70 to-secondary/50 p-5 transition-transform group-active:scale-[0.99]">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/15 blur-2xl" />
+        <div className="relative flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Dumbbell className="h-3.5 w-3.5 text-primary" />
+            Today&apos;s training
+          </span>
+          {template && (
+            <span
+              className={cn(
+                "rounded-full border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+                CATEGORY_ACCENT[template.category]
+              )}
+            >
+              {CATEGORY_LABEL[template.category]}
+            </span>
+          )}
+        </div>
+        <p className="relative mt-3 text-xl font-bold leading-tight">
+          {template?.name ?? "Rest day"}
+        </p>
+        {totalExercises > 0 ? (
+          <>
+            <div className="relative mt-3.5 flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-background/60">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${workoutPct}%` }}
+                />
+              </div>
+              <span className="font-mono text-[11px] font-semibold tabular-nums text-muted-foreground">
+                {totalSets}/{targetSets} sets
+              </span>
+            </div>
+            <div className="relative mt-3.5 flex items-center justify-between">
+              <span className="text-[13px] text-muted-foreground">
+                {completedExercises}/{totalExercises} exercises done
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">
+                {totalSets > 0 ? "Continue" : "Start"}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </span>
+            </div>
+          </>
+        ) : (
+          <p className="relative mt-2 text-[13px] text-muted-foreground">
+            Recovery scheduled — rest up.
+          </p>
+        )}
+      </div>
+    </Link>
   );
 }

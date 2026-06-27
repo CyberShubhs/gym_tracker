@@ -223,13 +223,13 @@ function RestTimerBar() {
     >
       <div className="pointer-events-auto rounded-xl border border-border/60 bg-card/95 backdrop-blur shadow-lg">
         <div className="flex items-center gap-3 px-3 py-2.5">
-          <Timer className="h-4 w-4 text-muted-foreground" />
-          <span className="font-mono text-sm font-semibold tabular-nums">
+          <Timer className="h-4 w-4 text-primary" />
+          <span className="font-mono text-sm font-semibold tabular-nums text-primary">
             {done ? "Done!" : `${mm}:${ss}`}
           </span>
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-foreground transition-all"
+              className="h-full rounded-full bg-primary transition-all"
               style={{ width: `${pct}%` }}
             />
           </div>
