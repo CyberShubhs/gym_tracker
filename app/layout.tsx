@@ -1,17 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { AppShell } from "@/components/app-shell";
 import { RestTimerProvider } from "@/components/rest-timer";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Forge design system typography: Hanken Grotesk for UI text, JetBrains Mono
+// for the tabular numbers / labels. Exposed as CSS variables that globals.css
+// wires into Tailwind's --font-sans / --font-mono, so the whole app picks them
+// up without touching individual components.
+const forgeSans = Hanken_Grotesk({
+  variable: "--font-forge-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const forgeMono = JetBrains_Mono({
+  variable: "--font-forge-mono",
   subsets: ["latin"],
 });
 
@@ -27,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: "#1a1613",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -42,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark h-full antialiased`}
+      className={`${forgeSans.variable} ${forgeMono.variable} dark h-full antialiased`}
     >
       <body className="min-h-full bg-background text-foreground">
         <StoreProvider>

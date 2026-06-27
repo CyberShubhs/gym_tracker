@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           paddingRight: "env(safe-area-inset-right)",
         }}
       >
-        <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around">
+        <div className="mx-auto flex w-full max-w-2xl items-stretch justify-around pt-2">
           {NAV.map((item) => {
             const active =
               item.href === "/"
@@ -68,20 +68,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={cn(
-                  "flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors",
-                  active
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
+                className="flex flex-1 flex-col items-center gap-1.5 pb-2"
               >
-                <Icon
+                <span
                   className={cn(
-                    "h-5 w-5 transition-transform",
-                    active && "scale-110"
+                    "flex h-8 w-12 items-center justify-center rounded-xl transition-colors",
+                    active
+                      ? "bg-primary/18 text-primary"
+                      : "text-muted-foreground"
                   )}
-                />
-                {item.label}
+                >
+                  <Icon className="h-[18px] w-[18px]" strokeWidth={active ? 2.4 : 2} />
+                </span>
+                <span
+                  className={cn(
+                    "font-mono text-[9px] font-semibold uppercase tracking-[0.06em] transition-colors",
+                    active ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}

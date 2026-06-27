@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Beef,
+  CalendarPlus,
   Droplet,
   Flame,
   Leaf,
@@ -28,7 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { FoodEntry } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { addDays, cn, formatDate, todayISO } from "@/lib/utils";
 import { UNIT_LABEL } from "@/lib/foods";
 
 const GLASS_ML = 250;
@@ -324,12 +325,13 @@ function ManualAdd({
 }
 
 function TodayLog({ date }: { date: string }) {
-  const { state, removeFoodEntry, updateFoodEntry } = useStore();
+  const { state, removeFoodEntry, updateFoodEntry, addFoodEntry } = useStore();
   const log = state.foodLogs[date];
   const entries = log?.entries
     ? [...log.entries].sort((a, b) => a.ts - b.ts)
     : [];
   const [editing, setEditing] = useState<FoodEntry | null>(null);
+  const [copying, setCopying] = useState<FoodEntry | null>(null);
 
   // Pre-entry legacy data: totals exist but no entries array. Show a hint
   // that lets the user know totals came from the old system.
@@ -406,6 +408,16 @@ function TodayLog({ date }: { date: string }) {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                onClick={() => setCopying(e)}
+                aria-label="Add to another day"
+                title="Add to another day"
+                className="shrink-0 text-muted-foreground hover:text-primary"
+              >
+                <CalendarPlus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => setEditing(e)}
                 aria-label="Edit entry"
                 className="shrink-0 text-muted-foreground hover:text-foreground"
@@ -436,7 +448,117 @@ function TodayLog({ date }: { date: string }) {
           }}
         />
       )}
+      {copying && (
+        <CopyToDayDialog
+          entry={copying}
+          sourceDate={date}
+          onClose={() => setCopying(null)}
+          onCopy={(targetDate) => {
+            addFoodEntry(targetDate, {
+              source: copying.source,
+              sourceFoodId: copying.sourceFoodId,
+              name: copying.name,
+              emoji: copying.emoji,
+              amount: copying.amount,
+              unit: copying.unit,
+              calories: copying.calories,
+              proteinG: copying.proteinG,
+              fiberG: copying.fiberG ?? 0,
+              carbsG: copying.carbsG ?? 0,
+              fatsG: copying.fatsG ?? 0,
+            });
+            setCopying(null);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+// "Add to another day": copies a single logged food/manual entry onto a date
+// the user picks. Quick presets cover the common cases (tomorrow / yesterday),
+// and a date field handles everything else. Purely additive — it reuses
+// addFoodEntry, so totals on the target day recompute exactly as if the food
+// had been logged there directly. Never mutates or moves the original entry.
+function CopyToDayDialog({
+  entry,
+  sourceDate,
+  onClose,
+  onCopy,
+}: {
+  entry: FoodEntry;
+  sourceDate: string;
+  onClose: () => void;
+  onCopy: (targetDate: string) => void;
+}) {
+  const today = todayISO();
+  const [target, setTarget] = useState(() => addDays(sourceDate, 1));
+
+  const presets: Array<{ label: string; date: string }> = [
+    { label: "Yesterday", date: addDays(sourceDate, -1) },
+    { label: "Today", date: today },
+    { label: "Tomorrow", date: addDays(sourceDate, 1) },
+  ];
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0">{entry.emoji ?? "🍽"}</span>
+            <span className="truncate">Add to another day</span>
+          </DialogTitle>
+          <DialogDescription className="truncate">
+            Copy <span className="text-foreground">{entry.name}</span> onto a
+            day of your choice.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-1.5">
+            {presets.map((p) => {
+              const active = target === p.date;
+              return (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => setTarget(p.date)}
+                  className={cn(
+                    "rounded-md border px-2 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/60 text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="copy-date">Pick a date</Label>
+            <Input
+              id="copy-date"
+              type="date"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="font-mono"
+            />
+            <p className="font-mono text-[10px] text-muted-foreground">
+              {target ? formatDate(target) : "—"}
+              {target === sourceDate && " · same day"}
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={() => onCopy(target)} disabled={!target}>
+            <CalendarPlus className="h-3.5 w-3.5" /> Add
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

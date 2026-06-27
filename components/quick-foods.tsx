@@ -239,6 +239,21 @@ export function QuickFoods({ date }: { date: string }) {
     return ranked.slice(0, 6);
   }, [state.foodLogs, foodById, date]);
 
+  // How many times each food has ever been logged, across the whole history
+  // (derived live from food logs — no new stored state, so it's fully
+  // data-safe). Drives the "most-used first" ordering within each category.
+  const usageCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const log of Object.values(state.foodLogs)) {
+      if (!log?.entries) continue;
+      for (const e of log.entries) {
+        if (!e.sourceFoodId || e.source === "recipe") continue;
+        m.set(e.sourceFoodId, (m.get(e.sourceFoodId) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [state.foodLogs]);
+
   const grouped = useMemo(() => {
     const map = new Map<FoodCategory, FoodLike[]>();
     for (const c of CATEGORY_ORDER) map.set(c, []);
@@ -248,8 +263,17 @@ export function QuickFoods({ date }: { date: string }) {
         if (arr) arr.push(f);
       }
     }
+    // Within each category, surface the foods this profile logs most often.
+    // Array.sort is stable, so foods with equal usage keep their original
+    // (preset) order — never-logged foods simply trail the frequently-used
+    // ones instead of being reshuffled.
+    for (const arr of map.values()) {
+      arr.sort(
+        (a, b) => (usageCount.get(b.id) ?? 0) - (usageCount.get(a.id) ?? 0)
+      );
+    }
     return map;
-  }, [allFoods]);
+  }, [allFoods, usageCount]);
 
   const uncategorizedCustoms = useMemo(
     () => customFoods.filter((c) => !c.category),
