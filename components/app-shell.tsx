@@ -22,11 +22,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const hideNav = pathname === "/login" || pathname.startsWith("/select");
 
-  // Floating tab bar, iOS-26 style. At rest it's a compact pill showing only
-  // the current tab's icon. Tap it to reveal all four tabs; pick one and it
-  // collapses again. It NEVER auto-expands — scrolling or moving between pages
-  // always leaves it in the compact pill, so it stays out of the way while you
-  // log food or sets. Purely a presentation toggle; navigation is unchanged.
+  // Floating tab bar, iOS-26 style. At rest it's a compact pill of four icons
+  // (no labels); tap it and it grows to icons + labels with the active tab in
+  // an amber pill. Picking a tab collapses it again. It NEVER auto-expands —
+  // scrolling or moving between pages always leaves it compact, so it stays out
+  // of the way while you log food or sets. Purely presentation; nav unchanged.
   const [expanded, setExpanded] = useState(false);
   const lastY = useRef(0);
 
@@ -99,22 +99,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }}
           className={cn(
             "pointer-events-auto flex items-center rounded-[26px] border border-border/60 bg-background/70 shadow-[0_12px_44px_-12px_rgba(0,0,0,0.75)] backdrop-blur-2xl transition-all duration-300 ease-out",
-            expanded ? "gap-1.5 p-2" : "gap-0 p-1.5"
+            expanded ? "gap-1 p-2" : "gap-0.5 p-1.5"
           )}
         >
           {NAV.map((item) => {
             const active = item.href === activeHref;
             const Icon = item.icon;
-            // Collapsed: only the active tab is visible; the rest shrink away to
-            // zero width. Tapping the visible icon expands the bar instead of
-            // navigating (it's already the current page).
+            // All four icons stay visible in both states. Collapsed = compact
+            // icons only; tapping anywhere expands the bar (it doesn't navigate
+            // yet). Expanded = icons + labels; tapping a tab navigates and
+            // collapses the bar back down.
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
-                tabIndex={!expanded && !active ? -1 : 0}
                 onClick={(e) => {
                   if (!expanded) {
                     e.preventDefault();
@@ -124,27 +124,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 className={cn(
-                  "flex flex-col items-center justify-center overflow-hidden rounded-2xl transition-all duration-300 ease-out",
-                  expanded
-                    ? "h-14 w-16 gap-1 opacity-100"
-                    : active
-                      ? "h-12 w-12 gap-0 opacity-100"
-                      : "pointer-events-none h-12 w-0 gap-0 opacity-0",
-                  active
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground active:bg-muted/40"
+                  "flex flex-col items-center justify-center transition-all duration-300 ease-out",
+                  expanded ? "w-16 gap-1" : "w-12 gap-0"
                 )}
               >
-                <Icon
-                  className={cn(
-                    "transition-all duration-300",
-                    expanded ? "h-[19px] w-[19px]" : "h-[22px] w-[22px]"
-                  )}
-                  strokeWidth={active ? 2.4 : 2}
-                />
                 <span
                   className={cn(
-                    "overflow-hidden font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.06em] transition-all duration-300 ease-out",
+                    "flex items-center justify-center rounded-full transition-all duration-300",
+                    expanded ? "h-10 w-10" : "h-9 w-9",
+                    active
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "transition-all duration-300",
+                      expanded ? "h-5 w-5" : "h-[21px] w-[21px]"
+                    )}
+                    strokeWidth={active ? 2.4 : 2}
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "overflow-hidden font-mono text-[9px] font-semibold uppercase leading-none tracking-[0.08em] transition-all duration-300 ease-out",
+                    active ? "text-primary" : "text-muted-foreground",
                     expanded ? "max-h-3 opacity-100" : "max-h-0 opacity-0"
                   )}
                 >
