@@ -131,6 +131,50 @@ export function shiftCycleTo(
   return { cycle, cycleAnchor: newAnchor };
 }
 
+// Build the future-only segment patch that makes `date` resolve to
+// `cycle[idx]` and rolls subsequent dates along `cycle` from there, keeping
+// every segment strictly before `date` untouched. Returns `null` when the
+// patch wouldn't actually change anything (so re-picking the already-planned
+// template is a genuine no-op and doesn't churn `cycleSegments`).
+function buildFutureSegmentPatch(
+  cycle: string[],
+  idx: number,
+  date: string,
+  settings: Settings
+): { cycleSegments: NonNullable<Settings["cycleSegments"]> } | null {
+  const newAnchor = addDays(date, -idx);
+  const existing = settings.cycleSegments ?? [];
+  // Keep history strictly before `date`. Any segment with effectiveFrom
+  // >= `date` is being overridden by this pick so it's dropped — the new
+  // segment supersedes it (this is what lets a re-pick on the same date
+  // replace its own segment rather than stacking duplicates).
+  const past = existing.filter((s) => s.effectiveFrom < date);
+  const newSegment = {
+    effectiveFrom: date,
+    cycle: [...cycle],
+    anchor: newAnchor,
+    createdAt: new Date().toISOString(),
+  };
+  const candidate = [...past, newSegment];
+  // Structural no-op check (ignoring createdAt): if the resulting segment
+  // list is identical to the existing one, there's nothing to persist.
+  const sameSegment = (
+    a: (typeof candidate)[number],
+    b: (typeof candidate)[number]
+  ) =>
+    a.effectiveFrom === b.effectiveFrom &&
+    a.anchor === b.anchor &&
+    a.cycle.length === b.cycle.length &&
+    a.cycle.every((c, i) => c === b.cycle[i]);
+  if (
+    existing.length === candidate.length &&
+    existing.every((s, i) => sameSegment(s, candidate[i]))
+  ) {
+    return null;
+  }
+  return { cycleSegments: candidate };
+}
+
 /**
  * Future-only cycle shift. Picking `templateId` on `date` rotates the
  * cycle so that:
@@ -139,47 +183,37 @@ export function shiftCycleTo(
  *   - dates strictly before `date` are NEVER affected (they fall back to
  *     the segment / global cycle / schedule that was already in effect)
  *
- * Returns a patch for Settings (a new `cycleSegments` array) or `null` if
- * the template isn't part of the cycle (the caller should still call
- * `ensureWorkoutLog(date, id)` so the picked date shows the template).
+ * The forward roll is rebuilt from the user's weekday `schedule` — the split
+ * they actually edit in Settings — rather than from whatever cycle the
+ * accumulated segments happen to describe. That keeps a pick rolling future
+ * days along the *current* split even when older segments have drifted out of
+ * sync with it (the most common reason a pick used to update today but leave
+ * future days on the old plan). If the template isn't on the weekday schedule
+ * (e.g. an extra / optional template), we fall back to the currently-active
+ * cycle so it still rolls forward when that cycle knows the template.
  *
- * Idempotent: re-picking the template that's already planned for `date`
- * still results in a no-op patch (anchor unchanged).
+ * Returns a patch for Settings (a new `cycleSegments` array) or `null` if the
+ * template is part of neither (the caller should still call
+ * `ensureWorkoutLog(date, id)` so the picked date shows the template), or if
+ * the patch wouldn't change anything.
+ *
+ * Idempotent: re-picking the template already planned for `date` is a no-op.
  */
 export function shiftFutureCycleTo(
   date: string,
   templateId: string,
   settings: Settings
 ): { cycleSegments: NonNullable<Settings["cycleSegments"]> } | null {
+  // Prefer the weekday schedule so the roll always follows the live split.
+  const scheduleCycle = defaultCycleFor(settings, date).cycle;
+  const schedIdx = scheduleCycle.indexOf(templateId);
+  if (schedIdx >= 0) {
+    return buildFutureSegmentPatch(scheduleCycle, schedIdx, date, settings);
+  }
+  // Not on the schedule — fall back to the active cycle so off-schedule
+  // templates that are still part of an active rotation roll forward too.
   const { cycle } = deriveActiveCycle(settings, date);
   const idx = cycle.indexOf(templateId);
   if (idx < 0) return null;
-  const newAnchor = addDays(date, -idx);
-  const existing = settings.cycleSegments ?? [];
-  // Keep history strictly before `date`. Any segment with effectiveFrom
-  // >= `date` is being overridden by this pick so it's dropped — the new
-  // segment supersedes it.
-  const past = existing.filter((s) => s.effectiveFrom < date);
-  const newSegment = {
-    effectiveFrom: date,
-    cycle: [...cycle],
-    anchor: newAnchor,
-    createdAt: new Date().toISOString(),
-  };
-  // No-op check: if the most recent past segment already resolves `date`
-  // to `templateId` AND has the same cycle, don't append a redundant
-  // segment — keeps the history clean.
-  if (past.length > 0) {
-    const last = past[past.length - 1];
-    const sameCycle =
-      last.cycle.length === cycle.length &&
-      last.cycle.every((c, i) => c === cycle[i]);
-    if (sameCycle) {
-      const wouldResolve = resolveCycleAt(last.cycle, last.anchor, date);
-      if (wouldResolve === templateId && existing.length === past.length) {
-        return null;
-      }
-    }
-  }
-  return { cycleSegments: [...past, newSegment] };
+  return buildFutureSegmentPatch(cycle, idx, date, settings);
 }
