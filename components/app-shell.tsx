@@ -90,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         onScroll={onScroll}
         className="flex-1 overflow-y-auto px-4 sm:px-6"
         style={{
-          paddingTop: "calc(env(safe-area-inset-top) + 1.25rem)",
+          paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 7rem)",
           paddingLeft: "max(env(safe-area-inset-left), 1rem)",
           paddingRight: "max(env(safe-area-inset-right), 1rem)",
@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav
         aria-label="Primary"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 14px)" }}
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
       >
         <div
           onClick={() => {
